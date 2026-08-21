@@ -1,0 +1,35 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.example.sportbooking</groupId>
+    <artifactId>sportbooking</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  
+  <groupId>com.example.sportbooking</groupId>
+  <artifactId>user-module</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>user-module</name>
+  <packaging>jar</packaging>
+  <description>Módulo de usuarios</description>
+  
+  <dependencies>
+    <!-- Agrega las dependencias necesarias -->
+  </dependencies>
+  
+  <build>
+    <plugins>
+     
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.2.0</version>
+        <configuration>
+          <!-- Configuración adicional del JAR si es necesario -->
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+  
+</project>
