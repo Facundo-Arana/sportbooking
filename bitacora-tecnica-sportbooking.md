@@ -132,3 +132,24 @@
 2. Evaluar si conviene una revisión más amplia del esquema de base de datos en paralelo a los próximos módulos, en vez de ir parcheando tabla por tabla.
 3. Crear el siguiente módulo por dominio (`court-module`, que depende de `venue` vía `court.fk_venue_id`), aplicando ya el flujo correcto de creación de módulo en Eclipse (Maven Module + skip archetype) documentado en el punto 6.
 4. Retomar el resto de los pendientes de la sección 7 (CORS, credenciales, `@ControllerAdvice`, testing) cuando corresponda.
+
+## 9. Módulo `court-module` — CRUD de canchas
+
+- **Estructura**: idéntica a `venue-module` — `entity` → `dto` → `exception` → `repository` → `service` → `controller`, package `com.example.sportbooking.court`.
+- **Dependencia nueva entre módulos**: `court-module` depende de `venue-module` en su `pom.xml` (mismo mecanismo que `auth-module` → `user-module`). Hace falta porque `Court` tiene una relación real hacia `Venue` (`fk_venue_id`), no solo un id suelto.
+- **Relación `@ManyToOne` en vez de guardar el id a mano**: `Court.venue` es un objeto `Venue` con `@JoinColumn(name = "fk_venue_id")`, igual patrón que `UserGlobalRole.user` / `UserGlobalRole.role` en `user-module`. Esto le da a Hibernate el JOIN gratis (por ejemplo, `court.getVenue().getName()` sin query manual) — usar un `Long venueId` suelto en la entity hubiera funcionado pero perdés esa navegación.
+- **Reutilización de `VenueNotFoundException` en vez de crear una excepción nueva**: cuando `CourtDTO.venue_id` no corresponde a ningún venue existente, el service tira la misma `VenueNotFoundException` del `venue-module` (404), no una nueva. La distinción real es conceptual — "el recurso referenciado no existe" — no depende de qué módulo la lanza. `CourtNotFoundException` sigue existiendo aparte para el caso "la cancha en sí no existe" (`GET/PUT/DELETE /courts/{id}`).
+- **Filtro por venue con query derivado**: `CourtRepository.findByVenue_Id(Long venueId)` — el `_` navega la relación (`Court.venue.id`) sin escribir `@Query`. Expuesto como `GET /courts?venueId=X` (parámetro opcional). Se agregó pensando en la pantalla "canchas de esta sede" del front y porque `court_schedule`/`reservation` (próximos módulos) también van a necesitar filtrar canchas por venue.
+- **DTO con `Boolean` (wrapper) en `indoor` e `is_active`, no `boolean` primitivo**: en el update parcial (`PUT /courts/{id}`) hace falta distinguir "el cliente no mandó el campo" (`null`, no tocar) de "el cliente mandó `false` a propósito". Con `boolean` primitivo esa distinción es imposible (siempre vale `false` por default). Mismo problema que no se dio en `VenueDTO` porque ahí todos los campos ya eran `String` (naturalmente nullable).
+- **Seguridad heredada sin configuración extra**: igual que `venue-module`, `/courts/**` queda protegido automáticamente por `.anyRequest().authenticated()`. No hizo falta tocar `SecurityConfiguration`.
+- **Pendiente de testear con Postman** (no se hizo en este chat, hacerlo antes de dar el módulo por cerrado):
+  - Alta con `venue_id` válido → 201.
+  - Alta con `venue_id` inexistente → 404 (no 400 — confirmar que se distingue bien de "nombre vacío").
+  - Alta sin `venue_id` o sin `name` → 400.
+  - `GET /courts?venueId=X` → solo trae canchas de esa sede.
+  - Update parcial: mandar solo `{"indoor": false}` y confirmar que el resto de los campos no se pisa.
+  - Sin token → 401/403 (heredado, no debería hacer falta nada especial).
+- **Concepto para profundizar**: cuándo conviene una excepción "compartida" entre módulos (como `VenueNotFoundException` acá) vs. una por módulo — el trade-off es acoplamiento (court-module ya depende de venue-module de todos modos, así que no suma acoplamiento nuevo) vs. claridad de mensajes de error específicos por dominio.
+
+### Próximo paso sugerido
+`court_schedule` (depende de `court` + `time_block`) es el siguiente candidato natural: ya vas a tener el patrón de "reutilizar `CourtNotFoundException` desde otro módulo" fresco, y ahí sí vas a necesitar `time_block` como módulo nuevo antes.
