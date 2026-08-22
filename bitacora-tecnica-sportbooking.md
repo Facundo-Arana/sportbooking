@@ -15,7 +15,7 @@
 
 *(Este punto ya lo tenés desarrollado en el Word — referencia rápida acá)*
 
-- Proyecto Maven **multi-módulo**: `sportbooking` (padre, `packaging=pom`, aggregator) → `app`, `auth-module`, `user-module`.
+- Proyecto Maven **multi-módulo**: `sportbooking` (padre, `packaging=pom`, aggregator) → `app`, `auth-module`, `user-module`, `venue-module`.
 - Renombrado de `platform` → `sportbooking` (groupId/artifactId/paquetes Java) a medida que se definió el dominio real del proyecto (gestión de reservas deportivas).
 - **Concepto para profundizar**: diferencia entre módulo `pom` (aggregator) vs `jar` (deployable); `dependencyManagement` vs `dependencies` en proyectos multi-módulo; cómo el `@SpringBootApplication` hace component scan de todo lo que esté bajo su mismo paquete raíz, aunque esté repartido en módulos Maven distintos.
 
@@ -32,7 +32,7 @@
 ### 2.2 — 🔴 `UserService`: no validaba username duplicado
 - **Síntoma**: se validaba email duplicado pero no username, pese a existir `findByUsername()` en el repo.
 - **Fix**: se agregó la validación simétrica de username antes de guardar.
-- **Concepto para profundizar**: validación de negocio en la capa de servicio vs. constraints de integridad a nivel de base de datos (defensa en profundidad — ver punto 5).
+- **Concepto para profundizar**: validación de negocio en la capa de servicio vs. constraints de integridad a nivel de base de datos (defensa en profundidad — ver punto 7).
 
 ### 2.3 — 🔴 `AuthController.isValidFields()`: riesgo de NullPointerException
 - **Síntoma**: si el JSON de registro llegaba sin el campo `email` o `password`, explotaba con NPE (500) en vez de una respuesta de validación prolija.
@@ -42,7 +42,7 @@
 ### 2.4 — 🔴 `AuthController.register()`: código de estado HTTP incorrecto
 - **Síntoma**: errores de validación de campos devolvían `401 UNAUTHORIZED`.
 - **Fix**: se cambió a `400 BAD_REQUEST` (401 es para fallos de autenticación, no de validación de entrada).
-- **Concepto para profundizar**: semántica correcta de códigos HTTP 4xx (400 vs 401 vs 403 — este último volvió a aparecer más adelante, ver 2.7).
+- **Concepto para profundizar**: semántica correcta de códigos HTTP 4xx (400 vs 401 vs 403 — este último volvió a aparecer más adelante, ver 3.1).
 
 ### 2.5 — 🔴 `AuthController.login()`: solo capturaba `BadCredentialsException`
 - **Síntoma**: cualquier otra subclase de `AuthenticationException` (cuenta deshabilitada, bloqueada, etc.) se colaba sin manejar → error 500 genérico en vez de un 401 prolijo.
@@ -85,24 +85,50 @@
 ## 4. Endpoints agregados
 
 - **`GET /auth/me`** (protegido, requiere `Authorization: Bearer <token>`): devuelve email y authorities del usuario autenticado. Se creó específicamente para validar el flujo de auth de punta a punta (login → token → request autenticada), no forma parte de un requerimiento de negocio todavía.
+- **`POST /venues`**, **`GET /venues`**, **`GET /venues/{id}`**, **`PUT /venues/{id}`**, **`DELETE /venues/{id}`** — CRUD básico de sedes (ver punto 5). Todos protegidos por la regla global `.anyRequest().authenticated()`, sin necesidad de agregar seguridad específica.
 
 ---
 
-## 5. Pendientes identificados (no resueltos aún)
+## 5. Módulo `venue-module` — CRUD de sedes
+
+- **Objetivo**: primer módulo de dominio nuevo (fuera de auth/user), CRUD completo sobre la tabla `platform.venue` que ya existía en la base pero sin entidades Java.
+- **Capas**: mismo patrón que `user-module` — `entity` → `repository` → `service` → `controller`, package `com.example.sportbooking.venue`.
+- **Decisión: `VenueNotFoundException` propia en vez de `RuntimeException` genérica.** `UserService` usa `RuntimeException` a secas para los casos de duplicado, lo cual funciona pero no permite que el controller distinga "dato inválido" de "recurso inexistente" sin parsear el mensaje. Para `venue` se separó en dos tipos: `IllegalArgumentException` (entrada inválida → 400) y `VenueNotFoundException`, una `RuntimeException` custom (recurso no existe → 404). Es un paso intermedio hacia el `@ControllerAdvice` centralizado que sigue pendiente (ver punto 7).
+- **Decisión: `created_at` seteado a mano en el constructor de alta.** La columna tiene `DEFAULT CURRENT_TIMESTAMP` en Postgres, pero si el campo del entity queda en `null`, Hibernate manda un `INSERT` con `created_at = NULL` explícito y pisa el default de la base. Mismo criterio que ya se usaba en `User`.
+- **Seguridad heredada sin configuración extra**: como `SecurityConfiguration` ya tiene `.anyRequest().authenticated()` como regla por defecto, los endpoints `/venues/**` quedaron protegidos automáticamente — no hubo que tocar el filtro ni agregar reglas nuevas. Confirmado con Postman: sin token da 401/403, con token válido responde normal.
+- **Testeado end-to-end**: alta, listado, detalle, edición parcial (solo pisa los campos no-nulos del DTO) y baja, más los casos de error (`name` vacío → 400, id inexistente → 404, sin token → 401/403). Todos los casos dieron el resultado esperado.
+- **Concepto para profundizar**: excepciones de negocio custom (`extends RuntimeException`) como forma de comunicar semántica entre capas sin acoplar el service a `HttpStatus` — el service no sabe nada de HTTP, solo el controller traduce la excepción a un código de respuesta.
+
+---
+
+## 6. Incidente de tooling: Eclipse generaba una clase `main` en un módulo librería
+
+- **Estado**: 🔴 Resuelto (no es un bug de código, sino de cómo se creó el proyecto en el IDE — se documenta porque consumió tiempo de diagnóstico y tiene una causa conceptual clara).
+- **Síntoma**: al crear `venue-module` (un módulo que solo debe aportar clases al classpath de `app`, sin arrancar nada por sí mismo), el Project Explorer lo mostraba decorado como `[boot] [sportbooking main]`, a diferencia de `user-module` y `auth-module` que solo mostraban `[boot]`.
+- **Causa raíz**: el wizard usado para crear el módulo no fue el genérico **Maven Module**, sino uno de los wizards de **Spring Starter Project**, que por diseño siempre genera una clase anotada `@SpringBootApplication` con `main()` — pensada para módulos ejecutables, no para módulos librería dentro de un multi-módulo. Un segundo intento, usando ya el wizard correcto, igual arrastró el problema por no haber tildado **"Create a simple project (skip archetype selection)"**: sin esa casilla, Maven aplica el archetype `maven-archetype-quickstart` por defecto, que genera su propia clase `App.java` con `main()`.
+- **Por qué persistía incluso después de borrar la clase**: el **Boot Dashboard** de Spring Tools mantiene su propio estado en el workspace (no en la carpeta del proyecto), asociando proyectos a "boot apps" ejecutables. Borrar el `.java` no alcanza si el proyecto quedó registrado ahí — hace falta sacarlo explícitamente de esa vista, o directamente borrar el proyecto completo (contenido en disco incluido) y recrearlo.
+- **Fix definitivo**: borrar `venue-module` (tildando "Delete project contents on disk"), limpiar el caché local de Maven (`~/.m2/repository/.../venue-module`) y los *launch configs* viejos, y recrear con **New → Other → Maven → Maven Module**, tildando **"Create a simple project (skip archetype selection)"** en el paso del archetype. Con eso el módulo se genera vacío: solo `pom.xml` + carpetas `src`, sin ninguna clase.
+- **Concepto para profundizar** ⭐: diferencia entre **Maven archetypes** (plantillas de proyecto que generan código de arranque, como `maven-archetype-quickstart`) y un módulo Maven "plano" sin archetype. También: qué es una **facet/nature de proyecto** en Eclipse (metadata en `.project` y en vistas específicas como el Boot Dashboard) y por qué puede sobrevivir a borrar archivos si no se limpia la metadata del workspace — es la misma idea de "estado que vive fuera del código fuente" que en otros contextos causa bugs de caché.
+
+---
+
+## 7. Pendientes identificados (no resueltos aún)
 
 - 🟡 **CORS** configurado para `localhost:3000` (puerto de React) — mencionaste que el front sería Angular, que por defecto usa `4200`. Se va a romper silenciosamente en cuanto se conecte el front real.
 - 🟡 **Credenciales hardcodeadas en `application.properties`** (usuario/password de Postgres, `jwt.secret`) en texto plano. Recomendación pendiente de aplicar: variables de entorno o `application-local.properties` fuera de Git, con un `.example` como referencia en el repo.
 - 🟡 `spring.application.name=platform` — quedó desactualizado tras el rename a `sportbooking` (solo estético, aparece en los logs).
 - 🟡 Falta constraint `UNIQUE` en `email`/`username` a nivel de base de datos — hoy la unicidad se valida solo en la capa de aplicación (`UserService`), lo cual no protege ante condiciones de carrera (dos requests simultáneos).
-- 🟡 Nullability real (`NOT NULL`) no está declarada en varias columnas clave (`email`, `username`, `password_hash`).
-- 🟡 No hay manejo global de errores (`@ControllerAdvice`/`@ExceptionHandler`) — cada controller maneja sus excepciones de forma ad hoc.
-- 🟡 No hay tests (unitarios ni de integración) en ningún módulo.
-- 🟡 Modelo de datos completo del dominio de reservas (`venue`, `court`, `time_block`, `court_schedule`, `reservation`, `user_venue_role`) ya existe en la base de datos, pero todavía no tiene entidades/repos/services/controllers en el código Java — próximo bloque grande de trabajo, organizado en módulos nuevos por dominio.
+- 🟡 Nullability real (`NOT NULL`) no está declarada en varias columnas clave (`email`, `username`, `password_hash`, y ahora también `venue.name`).
+- 🟡 No hay manejo global de errores (`@ControllerAdvice`/`@ExceptionHandler`) — cada controller maneja sus excepciones de forma ad hoc. `VenueController` ya usa un patrón más prolijo (excepción custom + catch específico) que puede servir de base cuando se centralice.
+- 🟡 No hay tests (unitarios ni de integración) en ningún módulo, incluido `venue-module`.
+- 🟡 Modelo de datos completo del dominio de reservas (`court`, `time_block`, `court_schedule`, `reservation`, `user_venue_role`) ya existe en la base de datos, pero todavía no tiene entidades/repos/services/controllers en el código Java — próximo bloque grande de trabajo. `venue` ya quedó resuelto como primer caso.
+- 🟡 **Remodelado eventual de la base de datos**: se identificó que la validación de negocio (unicidad, nullability) va por delante de los constraints reales de la tabla. Cuando se ataque el punto de constraints, evaluar si conviene una revisión más amplia del esquema (`platform.*`) en vez de ir parcheando tabla por tabla.
 
 ---
 
-## 6. Próximos pasos acordados
+## 8. Próximos pasos acordados
 
-1. Validar que los fixes de esta sesión compilen y funcionen en el entorno local (Eclipse + Postgres).
-2. Crear módulos nuevos por dominio (`venue-module`, `booking-module`, etc.) para las tablas ya diseñadas en la base.
-3. Retomar pendientes de la sección 5 cuando corresponda (seguridad de config, CORS, constraints de BBDD, testing).
+1. Agregar constraint `NOT NULL` a `venue.name` (y evaluar `UNIQUE` si el negocio lo requiere) — primer paso concreto antes de seguir con módulos nuevos.
+2. Evaluar si conviene una revisión más amplia del esquema de base de datos en paralelo a los próximos módulos, en vez de ir parcheando tabla por tabla.
+3. Crear el siguiente módulo por dominio (`court-module`, que depende de `venue` vía `court.fk_venue_id`), aplicando ya el flujo correcto de creación de módulo en Eclipse (Maven Module + skip archetype) documentado en el punto 6.
+4. Retomar el resto de los pendientes de la sección 7 (CORS, credenciales, `@ControllerAdvice`, testing) cuando corresponda.

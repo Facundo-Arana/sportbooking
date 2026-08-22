@@ -154,6 +154,7 @@
 	<modules>
 		<module>user-module</module>
 		<module>auth-module</module>
+		<module>venue-module</module>
 		<module>app</module>
 	</modules>
 </project>
