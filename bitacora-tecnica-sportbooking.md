@@ -151,5 +151,31 @@
   - Sin token → 401/403 (heredado, no debería hacer falta nada especial).
 - **Concepto para profundizar**: cuándo conviene una excepción "compartida" entre módulos (como `VenueNotFoundException` acá) vs. una por módulo — el trade-off es acoplamiento (court-module ya depende de venue-module de todos modos, así que no suma acoplamiento nuevo) vs. claridad de mensajes de error específicos por dominio.
 
-### Próximo paso sugerido
+### Próximo paso sugerido (cumplido, ver punto 10)
 `court_schedule` (depende de `court` + `time_block`) es el siguiente candidato natural: ya vas a tener el patrón de "reutilizar `CourtNotFoundException` desde otro módulo" fresco, y ahí sí vas a necesitar `time_block` como módulo nuevo antes.
+
+---
+
+## 10. Módulo `time-block-module` — CRUD de franjas horarias
+
+- **Estado**: 🔴 Resuelto (compila y estructura verificada; testeo end-to-end con Postman pendiente de detalle por endpoint, ver checklist más abajo — el usuario confirmó que "todo ok" tras probarlo).
+- **Estructura**: mismo patrón que `court-module` — `entity` → `dto` → `exception` → `repository` → `service` → `controller`, package `com.example.sportbooking.timeblock` (sin guión bajo en el nombre del paquete Java, a diferencia de la tabla `time_block`; convención estándar de Java).
+- **Dependencia nueva entre módulos**: `time-block-module` depende de `venue-module`, mismo mecanismo y mismo motivo que `court-module` (`TimeBlock.venue` es un `@ManyToOne` hacia `Venue` vía `fk_venue_id`).
+- **`LocalTime` (java.time) en vez de `java.sql.Time`** para `start_time`/`end_time`: Hibernate 6 mapea `LocalTime` nativamente a la columna `time` de Postgres, y Jackson lo serializa/deserializa como `"HH:mm:ss"` sin configuración adicional (el módulo `jackson-datatype-jsr310` ya viene transitivamente con `spring-boot-starter-web`). Se prefirió sobre `java.sql.Time` por ser la API de fecha/hora moderna de Java (paquete `java.time`, JSR-310) en vez de la heredada de JDBC.
+- **Validación cruzada nueva (no existía en `venue` ni `court`)**: `end_time` debe ser posterior a `start_time`. Es una tercera categoría de validación además de "campo nulo → 400" y "referencia inexistente → 404": una regla de consistencia *entre dos campos del mismo recurso*. Se extrajo a un método privado `validateTimeRange()` reutilizado en `create()` y `update()`.
+- **Re-validación sobre el estado final de la entity en el update, no sobre el DTO**: en el `PUT` parcial, si el cliente manda solo `end_time` (o solo `start_time`), la regla `end_time > start_time` se re-chequea después de aplicar los cambios sobre la entity ya persistida — no alcanza con validar los campos que vinieron sueltos en el body, porque cualquiera de los dos valores puede venir del estado previo.
+- **Consecuencia en el controller**: a diferencia de `CourtController.update()` (que solo capturaba `CourtNotFoundException | VenueNotFoundException`), `TimeBlockController.update()` también captura `IllegalArgumentException`, porque ahora el `service.update()` sí puede fallar por validación de negocio y no solo por "no encontrado".
+- **Sin `created_at` ni `is_active`**: a diferencia de `Venue`/`Court`, la tabla `time_block` no tiene esas columnas (ver `sportbooking.sql`), así que el constructor de alta no necesita setear nada "a mano" más allá de lo que manda el DTO.
+- **Filtro por venue con query derivado**: `TimeBlockRepository.findByVenue_Id(Long venueId)`, expuesto como `GET /time-blocks?venueId=X` (opcional) — mismo patrón que `CourtRepository`. Lo va a necesitar `court_schedule` para armar combinaciones cancha+franja de una misma sede.
+- **Seguridad heredada sin configuración extra**: igual que `venue`/`court`, `/time-blocks/**` queda protegido automáticamente por `.anyRequest().authenticated()`.
+- **Testeado**: confirmado por el usuario ("todo ok") tras probar los endpoints. No quedó registrado en esta bitácora el detalle caso por caso (a diferencia del punto 5), a pedir la próxima vez si se necesita el desglose.
+- **Concepto para profundizar**: validaciones de **consistencia entre campos** (cross-field validation) como tercera categoría junto a "campo obligatorio faltante" y "referencia a otro recurso inexistente" — y por qué, en un update parcial, hay que validar contra el estado resultante completo y no contra el payload recibido.
+
+---
+
+## 11. Nota de proceso: entrega de archivos en el chat
+
+- A partir de esta sesión, ante cambios de código el asistente entrega **solo los archivos nuevos o modificados**, respetando la estructura real de carpetas dentro de `sportbooking/` (la carpeta raíz que contiene el `pom.xml` padre) — no el proyecto completo comprimido. Acordado para minimizar tokens dado el plan gratuito.
+
+### Próximo paso sugerido
+`court_schedule` (depende de `court` + `time_block`, ambos ya resueltos) es el siguiente módulo de dominio. Va a ser el primer caso con **dos** relaciones `@ManyToOne` simultáneas (`fk_court_id` + `fk_time_block_id`) más un campo propio sin FK (`day_of_week`), y el primer lugar natural para reutilizar tanto `CourtNotFoundException` como algo de `time-block-module` en el mismo service.

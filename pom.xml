@@ -156,6 +156,7 @@
 		<module>auth-module</module>
 		<module>venue-module</module>
 		<module>court-module</module>
+		<module>time-block-module</module>
 		<module>app</module>
 	</modules>
 </project>
