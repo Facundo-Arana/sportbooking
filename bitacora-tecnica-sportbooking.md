@@ -121,7 +121,7 @@
 - 🟡 Nullability real (`NOT NULL`) no está declarada en varias columnas clave (`email`, `username`, `password_hash`, y ahora también `venue.name`).
 - 🟡 No hay manejo global de errores (`@ControllerAdvice`/`@ExceptionHandler`) — cada controller maneja sus excepciones de forma ad hoc. `VenueController` ya usa un patrón más prolijo (excepción custom + catch específico) que puede servir de base cuando se centralice.
 - 🟡 No hay tests (unitarios ni de integración) en ningún módulo, incluido `venue-module`.
-- 🟡 Modelo de datos completo del dominio de reservas (`court`, `time_block`, `court_schedule`, `reservation`, `user_venue_role`) ya existe en la base de datos, pero todavía no tiene entidades/repos/services/controllers en el código Java — próximo bloque grande de trabajo. `venue` ya quedó resuelto como primer caso.
+- 🟡 Modelo de datos completo del dominio de reservas (`reservation`, `user_venue_role`) ya existe en la base de datos, pero todavía no tiene entidades/repos/services/controllers en el código Java. `venue`, `court`, `time_block` y `court_schedule` ya quedaron resueltos (ver puntos 5, 9, 10 y 12); `reservation` es el próximo (ver punto 12).
 - 🟡 **Remodelado eventual de la base de datos**: se identificó que la validación de negocio (unicidad, nullability) va por delante de los constraints reales de la tabla. Cuando se ataque el punto de constraints, evaluar si conviene una revisión más amplia del esquema (`platform.*`) en vez de ir parcheando tabla por tabla.
 
 ---
@@ -177,5 +177,25 @@
 
 - A partir de esta sesión, ante cambios de código el asistente entrega **solo los archivos nuevos o modificados**, respetando la estructura real de carpetas dentro de `sportbooking/` (la carpeta raíz que contiene el `pom.xml` padre) — no el proyecto completo comprimido. Acordado para minimizar tokens dado el plan gratuito.
 
-### Próximo paso sugerido
+### Próximo paso sugerido (cumplido, ver punto 12)
 `court_schedule` (depende de `court` + `time_block`, ambos ya resueltos) es el siguiente módulo de dominio. Va a ser el primer caso con **dos** relaciones `@ManyToOne` simultáneas (`fk_court_id` + `fk_time_block_id`) más un campo propio sin FK (`day_of_week`), y el primer lugar natural para reutilizar tanto `CourtNotFoundException` como algo de `time-block-module` en el mismo service.
+
+---
+
+## 12. Módulo `court-schedule-module` — horarios habilitados por cancha
+
+- **Estado**: 🟢 Resuelto y testeado end-to-end en Postman por el usuario ("anda todo ok"), incluyendo los casos de validación cruzada nueva (ver más abajo).
+- **Estructura**: mismo patrón que `court-module`/`time-block-module` — `entity` → `dto` → `exception` → `repository` → `service` → `controller`, package `com.example.sportbooking.courtschedule`.
+- **Primer módulo con dos relaciones `@ManyToOne` simultáneas hacia módulos distintos**: `CourtSchedule.court` (`fk_court_id` → `court-module`) y `CourtSchedule.timeBlock` (`fk_time_block_id` → `time-block-module`). El `pom.xml` del módulo depende de ambos; reutiliza `CourtRepository`/`CourtNotFoundException` de uno y `TimeBlockRepository`/`TimeBlockNotFoundException` del otro en el mismo `CourtScheduleService`, sin necesidad de crear excepciones nuevas para esos dos casos.
+- **`day_of_week` como `Short`, no `Integer`**: la columna es `int2` (smallint) en Postgres. Se eligió el tipo Java que mapea 1 a 1 con el tipo real de la columna, mismo criterio que se usó con `LocalTime` en `time-block-module` (usar el tipo que representa exactamente lo que hay en la base, no el "default cómodo"). Convención adoptada: `0` = domingo ... `6` = sábado (la misma que usa `EXTRACT(DOW)` de Postgres), validada en el service (`validateDayOfWeek`, rango 0–6 → 400 si no cumple).
+- **Validación cruzada nueva: mismo `venue` en `court` y `time_block`** — cuarta categoría de validación en el proyecto (sumada a "campo obligatorio faltante", "referencia inexistente" y "consistencia entre dos campos del mismo recurso" de `time-block-module`). Acá la consistencia es entre **dos relaciones**, no dos campos simples: no tiene sentido un `CourtSchedule` que combine una cancha de un venue con una franja horaria de otro. Extraída a `validateSameVenue(Court, TimeBlock)`, reutilizada en `create()` y `update()`.
+- **Re-validación sobre el estado final de la entity en el update** (mismo criterio que `validateTimeRange` en `time-block-module`): si el `PUT` parcial manda solo `court_id` (o solo `time_block_id`), `validateSameVenue()` se re-chequea después de aplicar el cambio sobre la entity persistida, porque el otro lado de la relación puede venir del estado previamente guardado.
+- **`is_enabled` con `Boolean` wrapper, seteado a mano en el alta**: mismo patrón que `Court.is_active` — se necesita distinguir "no vino en el body" (`null`) de "vino en `false` a propósito" en el update parcial, y no se confía en el `DEFAULT true` de la columna (Hibernate manda el valor explícito del campo, `null` incluido, si no se setea a mano en el constructor).
+- **Filtro por cancha**: `CourtScheduleRepository.findByCourt_Id(Long courtId)`, expuesto como `GET /court-schedules?courtId=X` (opcional) — pensado para la pantalla "grilla semanal de esta cancha" del front.
+- **Seguridad heredada sin configuración extra**: igual que los módulos anteriores, `/court-schedules/**` queda protegido automáticamente por `.anyRequest().authenticated()`.
+- **Testeado**: confirmado por el usuario ("anda todo ok") sobre el checklist completo (alta correcta, los 4 casos de campo faltante, rango de `day_of_week`, referencias inexistentes con 404, el caso nuevo de venues distintos con 400, filtro por `courtId`, update parcial sin pisar campos no enviados, la re-validación de "mismo venue" tras un `PUT` parcial, delete + 404 posterior, y sin token).
+- **Incidente de proceso (no de código)**: el primer `.zip` que el usuario subió para revisión venía con la estructura de carpetas desarmada (intermedios faltantes); no correspondía a un error de generación de este lado — se confirmó comparando contra la copia de trabajo, contenido idéntico. Reenviado correctamente en el segundo intento. No amerita cambio de proceso, ya que el punto 11 (entrega de solo archivos nuevos/modificados respetando la estructura real) ya cubre el caso.
+- **Concepto para profundizar** ⭐: validación de consistencia **entre relaciones** (no entre campos simples) como extensión natural del patrón cross-field validation del punto 10 — mismo problema conceptual (revalidar contra el estado final, no contra el payload parcial), aplicado a un grafo de objetos en vez de dos primitivos.
+
+### Próximo paso sugerido
+`reservation` es el último recurso del dominio de reservas sin módulo Java (depende de `court` + `time_block`, mismas dos relaciones que `court_schedule`, más `fk_reserved_by_user_id`/`fk_reserved_for_user_id` hacia `user-module`) — primer caso con **tres** módulos externos referenciados desde un mismo service. Buen candidato para revisar en el próximo chat, dado el tamaño creciente de esta bitácora (ver aviso de plan gratuito en el punto 0/instrucciones del proyecto).

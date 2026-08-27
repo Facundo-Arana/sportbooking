@@ -39,6 +39,11 @@
             <artifactId>time-block-module</artifactId>
              <version>0.0.1-SNAPSHOT</version>
         </dependency>
+        <dependency>
+            <groupId>com.example.sportbooking</groupId>
+            <artifactId>court-schedule-module</artifactId>
+             <version>0.0.1-SNAPSHOT</version>
+        </dependency>
     </dependencies>
   
 	<build>
