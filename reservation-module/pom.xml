@@ -1,0 +1,51 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.example.sportbooking</groupId>
+    <artifactId>sportbooking</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>reservation-module</artifactId>
+  <name>reservation-module</name>
+  <packaging>jar</packaging>
+  <description>Módulo de reservas (reservation)</description>
+
+  <dependencies>
+    <!-- Primer módulo con TRES dependencias externas simultáneas: Reservation
+         referencia Court (fk_court_id), TimeBlock (fk_time_block_id) y User
+         (fk_reserved_by_user_id / fk_reserved_for_user_id). Reutiliza
+         CourtNotFoundException, TimeBlockNotFoundException y la nueva
+         UserNotFoundException, sin crear excepciones propias para esos casos. -->
+    <dependency>
+      <groupId>com.example.sportbooking</groupId>
+      <artifactId>court-module</artifactId>
+      <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>com.example.sportbooking</groupId>
+      <artifactId>time-block-module</artifactId>
+      <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>com.example.sportbooking</groupId>
+      <artifactId>user-module</artifactId>
+      <version>0.0.1-SNAPSHOT</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.2.0</version>
+        <configuration>
+          <!-- Configuración adicional del JAR si es necesario -->
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

@@ -123,6 +123,8 @@
 - 🟡 No hay tests (unitarios ni de integración) en ningún módulo, incluido `venue-module`.
 - 🟡 Modelo de datos completo del dominio de reservas (`reservation`, `user_venue_role`) ya existe en la base de datos, pero todavía no tiene entidades/repos/services/controllers en el código Java. `venue`, `court`, `time_block` y `court_schedule` ya quedaron resueltos (ver puntos 5, 9, 10 y 12); `reservation` es el próximo (ver punto 12).
 - 🟡 **Remodelado eventual de la base de datos**: se identificó que la validación de negocio (unicidad, nullability) va por delante de los constraints reales de la tabla. Cuando se ataque el punto de constraints, evaluar si conviene una revisión más amplia del esquema (`platform.*`) en vez de ir parcheando tabla por tabla.
+- 🟡 **[Prioritario, ver punto 14]** Loop infinito de serialización JSON por la relación bidireccional `User.globalRoles` ↔ `UserGlobalRole.user` — detectado al serializar `Reservation.reservedByUser`. Bloqueante para testear `reservation-module`.
+- 🟡 **[Prioritario, ver punto 15]** Migrar todos los controllers de devolver entities JPA directo a Response DTOs específicos — pendiente general que dejó de ser "algún día" y pasó a prioritario, porque el bug de arriba es consecuencia directa de no tenerlo resuelto.
 
 ---
 
@@ -197,5 +199,58 @@
 - **Incidente de proceso (no de código)**: el primer `.zip` que el usuario subió para revisión venía con la estructura de carpetas desarmada (intermedios faltantes); no correspondía a un error de generación de este lado — se confirmó comparando contra la copia de trabajo, contenido idéntico. Reenviado correctamente en el segundo intento. No amerita cambio de proceso, ya que el punto 11 (entrega de solo archivos nuevos/modificados respetando la estructura real) ya cubre el caso.
 - **Concepto para profundizar** ⭐: validación de consistencia **entre relaciones** (no entre campos simples) como extensión natural del patrón cross-field validation del punto 10 — mismo problema conceptual (revalidar contra el estado final, no contra el payload parcial), aplicado a un grafo de objetos en vez de dos primitivos.
 
-### Próximo paso sugerido
-`reservation` es el último recurso del dominio de reservas sin módulo Java (depende de `court` + `time_block`, mismas dos relaciones que `court_schedule`, más `fk_reserved_by_user_id`/`fk_reserved_for_user_id` hacia `user-module`) — primer caso con **tres** módulos externos referenciados desde un mismo service. Buen candidato para revisar en el próximo chat, dado el tamaño creciente de esta bitácora (ver aviso de plan gratuito en el punto 0/instrucciones del proyecto).
+### Próximo paso sugerido (cumplido, ver punto 13)
+`reservation` es el último recurso del dominio de reservas sin módulo Java (depende de `court` + `time_block`, mismas dos relaciones que `court_schedule`, más `fk_reserved_by_user_id`/`fk_reserved_for_user_id` hacia `user-module`) — primer caso con **tres** módulos externos referenciados desde un mismo service.
+
+---
+
+## 13. Módulo `reservation-module` — CRUD de reservas
+
+- **Estado**: 🟡 Implementado (compila, estructura verificada), **testeo end-to-end en Postman todavía NO realizado** — bloqueado en la práctica por el bug del punto 14 (el `POST /reservations` devuelve el `reservedByUser` anidado, y ahí explota el loop de serialización). Resolver el punto 14 antes de arrancar el checklist de abajo.
+- **Estructura**: mismo patrón que los módulos anteriores — `entity` → `dto` → `exception` → `repository` → `service` → `controller`, package `com.example.sportbooking.reservation`.
+- **Primer módulo con tres relaciones `@ManyToOne` hacia módulos externos distintos en el mismo service**: `court` (`court-module`), `timeBlock` (`time-block-module`), `reservedByUser`/`reservedForUser` (`user-module`, dos relaciones al mismo tipo `User`). El `pom.xml` de `reservation-module` depende de los tres.
+- **`UserNotFoundException` nueva en `user-module`**: primer módulo que necesita resolver "¿existe el usuario con este id?" como una referencia externa (antes `user-module` solo validaba duplicados de email/username en el alta, nunca resolvía por id desde afuera). Mismo criterio que `CourtNotFoundException`/`TimeBlockNotFoundException`.
+- **`reserved_by_user_id` no se actualiza en el `PUT`**: decisión de diseño — identifica quién originó la reserva, es un dato histórico que no debería cambiar después del alta (a diferencia de `court_id`/`time_block_id`, que sí tiene sentido reprogramar).
+- **Validación nueva — exclusión mutua entre dos campos opcionales**: `reserved_for_user_id` y `reserved_for_name` no pueden venir cargados los dos a la vez (400). Es una **quinta categoría** de validación en el proyecto, distinta de las cuatro anteriores (campo obligatorio faltante, referencia inexistente, consistencia entre dos campos del mismo recurso, consistencia entre dos relaciones): acá la regla es "como mucho uno de los dos", no "los dos tienen que coincidir". Si no viene ninguno, se asume que la reserva es para quien la hizo (`reservedByUser`).
+- **Validación nueva — no permitir doble reserva (regla de negocio central de un booking system)**: no puede haber dos reservas activas (`status != CANCELLED`) para la misma cancha + franja horaria + fecha. Se resuelve con una query derivada (`existsByCourt_IdAndTimeBlock_IdAndDateAndStatusNot`) en el alta, y su variante con `...AndIdNot` en el update (para no chocar contra la propia reserva al reprogramar sin cambiar nada).
+  - **Primer uso de `IllegalStateException`** en el proyecto (hasta ahora todo era `IllegalArgumentException` para 400 o las `NotFoundException` para 404): el dato de entrada es válido en sí mismo, lo que falla es el *estado actual del sistema*. Mapeado en el controller a **409 CONFLICT** — primer uso de ese código HTTP en el proyecto.
+  - **Limitación conocida, documentada a propósito**: esta validación no protege contra una condición de carrera real (dos requests simultáneos para el mismo turno) — mismo problema de fondo que ya señalaba el punto 7 para email/username. Para eso haría falta un `UNIQUE` constraint en Postgres sobre `(fk_court_id, fk_time_block_id, date)` con alguna condición sobre `status`, o una transacción con lock explícito. Queda en el radar del "remodelado eventual de la base de datos" (punto 7).
+- **Fix de seguridad en `user-module`, motivado por este módulo**: se agregó `@JsonIgnore` en `User.password_hash`. Hasta ahora `User` nunca viajaba completo en una respuesta JSON (registro devuelve solo `username`, login un token, `/me` arma un `Map` a mano con `email`+`authorities`); `reservation-module` es el primer caso que serializa un `User` anidado de verdad (`Reservation.reservedByUser`/`reservedForUser`), así que sin el `@JsonIgnore` el hash de la contraseña se filtraba en la respuesta de `/reservations`.
+- **`status`/`payment_status` como conjunto cerrado de strings validado en el service** (`VALID_STATUSES`, `VALID_PAYMENT_STATUSES`), no un `enum` de Java todavía — la columna es `varchar` sin `CHECK` constraint en la base. En el alta se fuerzan a mano en `"PENDING"` (el DTO no los lee en `create()`); en el update sí se pueden cambiar, validados contra la lista permitida.
+- **Filtros combinables en `GET /reservations`**: `?courtId=X`, `?date=YYYY-MM-DD`, o ambos juntos — pensado para pantallas típicas de un booking system ("agenda de esta cancha", "reservas de hoy", "agenda de esta cancha para hoy").
+- **Seguridad heredada sin configuración extra**: igual que los módulos anteriores, `/reservations/**` queda protegido automáticamente por `.anyRequest().authenticated()`.
+- **Pendiente de testear con Postman** (hacer recién después de resolver el punto 14):
+  - Alta con todos los datos válidos → 201.
+  - Alta sin `date`/`court_id`/`time_block_id`/`reserved_by_user_id` → 400 (cuatro casos).
+  - Alta con `reserved_for_user_id` **y** `reserved_for_name` cargados a la vez → 400 (exclusión mutua).
+  - Alta con `court_id`/`time_block_id`/`reserved_by_user_id`/`reserved_for_user_id` inexistente → 404 en cada caso.
+  - Dos altas para la misma cancha + franja + fecha → la segunda debe dar **409**, no 400 ni 500.
+  - Cancelar una reserva (`PUT` con `status: "CANCELLED"`) y volver a reservar el mismo turno → debe permitirlo (la cancelada no bloquea).
+  - `GET /reservations?courtId=X`, `?date=YYYY-MM-DD` y con ambos combinados.
+  - Update parcial: mandar solo `{"status": "CONFIRMED"}` y confirmar que no se pisan los demás campos.
+  - `status`/`payment_status` con un valor fuera de la lista permitida → 400.
+  - Delete + `GET` posterior → 404.
+  - Sin token → 401/403 (heredado).
+- **Concepto para profundizar**: distinción entre las tres categorías de error HTTP que ahora conviven en el proyecto — **400** (dato de entrada inválido), **404** (recurso referenciado no existe) y **409** (el request es válido pero choca con el estado actual del sistema) — y por qué mapear cada una a una excepción de Java distinta (`IllegalArgumentException`, `XxxNotFoundException`, `IllegalStateException`) en vez de una sola genérica hace que el controller pueda traducir sin parsear mensajes.
+
+---
+
+## 14. 🟡 Bug detectado (pendiente): loop infinito de serialización JSON por relación bidireccional `User` ↔ `UserGlobalRole`
+
+- **Síntoma**: al hacer `POST /reservations`, la respuesta JSON de `reservedByUser.globalRoles[0].user.globalRoles[0].user...` se repite indefinidamente (en la práctica termina en `StackOverflowError`).
+- **Causa raíz**: `User.globalRoles` (`@OneToMany`, mappedBy `user`) y `UserGlobalRole.user` (`@ManyToOne`) son una **relación bidireccional** sin cortar para serialización. Jackson recorre el grafo de objetos completo al serializar un `User`: `User → globalRoles → UserGlobalRole → user → globalRoles → ...`, sin ningún punto de corte. Mientras `User` nunca viajaba completo en una respuesta (ver punto 13, ítem del `@JsonIgnore`), el problema no se manifestaba — apareció recién ahora que `Reservation.reservedByUser` serializa un `User` de verdad.
+- **No es un problema de `court`/`timeBlock`/`venue`**: esas relaciones son unidireccionales desde el lado que se serializa (ninguna entity tiene una colección de vuelta que cierre el ciclo), por eso no generan el mismo loop.
+- **Fix propuesto, todavía NO aplicado — dos enfoques, de más rápido a más de fondo**:
+  1. **Parche rápido**: `@JsonManagedReference` en `User.globalRoles` + `@JsonBackReference` en `UserGlobalRole.user`. Corta el ciclo sin tocar arquitectura. Limitación: es un parche a nivel de infraestructura de serialización (no resuelve que se sigan devolviendo entities JPA completas), y el mismo problema va a reaparecer con `UserVenueRole` (misma bidireccionalidad, módulo todavía sin construir) si no se aplica ahí también.
+  2. **Fix de fondo (recomendado para resolver junto con el punto de Response DTOs, ver punto 7)**: dejar de devolver entities directo desde los controllers y mapear a DTOs de respuesta específicos por endpoint, que solo incluyan los campos que el cliente necesita. Con eso el ciclo ni existe, porque nunca se serializa la colección `globalRoles` en el contexto de una respuesta de `Reservation`.
+- **Por qué importa resolverlo ya**: bloquea en la práctica el testeo end-to-end de `reservation-module` (punto 13) — cualquier `POST`/`GET` que traiga un `reservedByUser` va a fallar.
+- **Concepto para profundizar** ⭐: relaciones bidireccionales en JPA y el problema de **serialización cíclica** que generan por default en cualquier librería que recorra el grafo de objetos (Jackson, pero el mismo problema aplica a otras). Es el mismo tipo de bug que el punto 3.2 (`LazyInitializationException`) en el sentido de que es invisible hasta que un flujo nuevo *usa* la relación de una forma que los flujos anteriores no usaban — vale la pena tenerlo fresco para explicar en entrevista el patrón general: "una relación bidireccional en el modelo de persistencia no debería exponerse tal cual en el modelo de la API".
+
+---
+
+## 15. Pendientes inmediatos para el próximo chat (prioridad, en este orden)
+
+1. 🟡 **Resolver el loop de serialización `User` ↔ `UserGlobalRole`** (punto 14) — bloqueante para poder testear `reservation-module`.
+2. 🟡 **Migrar los controllers a Response DTOs en vez de devolver entities JPA directo** — ya venía como pendiente general (punto 7) pero pasó a ser prioritario porque el bug del punto 14 es una consecuencia directa de no tenerlo. Alcance: revisar los DTOs de respuesta de `venue`, `court`, `time-block`, `court-schedule`, `reservation` y `user` (al menos `reservedByUser`/`reservedForUser`, que hoy exponen más de lo necesario — `venue` completo dentro de `court` dentro de `reservation`, por ejemplo). Definir primero un criterio (¿un DTO de respuesta por entity, reutilizado entre módulos, o uno por endpoint según lo que necesita el front?) antes de escribir código, dado el volumen de módulos ya existentes.
+3. 🟡 Una vez resuelto 1 y 2 (o al menos 1), correr el checklist de testeo de `reservation-module` (punto 13) en Postman.
+4. Retomar el resto de los pendientes de la sección 7 (CORS para Angular, credenciales hardcodeadas, `UNIQUE`/`NOT NULL` en base, `@ControllerAdvice` centralizado, testing automatizado, remodelado del esquema) cuando corresponda — ninguno es bloqueante para lo anterior.

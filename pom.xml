@@ -158,6 +158,7 @@
 		<module>court-module</module>
 		<module>time-block-module</module>
 		<module>court-schedule-module</module>
+		<module>reservation-module</module>
 		<module>app</module>
 	</modules>
 </project>

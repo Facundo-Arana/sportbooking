@@ -4,6 +4,8 @@ import java.sql.Timestamp;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -37,6 +39,13 @@ public class User {
 	
 	private String email;
 	
+	// @JsonIgnore: hasta ahora User nunca viajaba completo en una respuesta
+	// JSON (registro devuelve solo username, login devuelve un token, /me
+	// arma un Map a mano con email+authorities). reservation-module es el
+	// primer caso que serializa un User anidado de verdad (Reservation
+	// .reservedByUser / .reservedForUser), así que sin este @JsonIgnore el
+	// hash de la contraseña se filtraría en la respuesta de /reservations.
+	@JsonIgnore
 	private String password_hash;
 	
 	private String name;
