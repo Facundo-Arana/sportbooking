@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
@@ -54,7 +55,15 @@ public class User {
 	
 	private Timestamp updated_at;
 	
+	// @JsonManagedReference / @JsonBackReference (ver UserGlobalRole.user):
+	// parche de infraestructura de serialización, ver bitácora punto 14. Corta
+	// el ciclo User -> globalRoles -> UserGlobalRole -> user -> globalRoles...
+	// que Jackson recorre indefinidamente al serializar un User completo (algo
+	// que reservation-module es el primer caso en hacer de verdad, ver punto
+	// 13). No resuelve el problema de fondo (seguir devolviendo entities JPA
+	// en vez de DTOs de respuesta) — eso queda para el próximo paso.
 	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+	@JsonManagedReference
     private Set<UserGlobalRole> globalRoles = new HashSet<>();
 
 	public User(String username, String email, String password_hash, String name) {

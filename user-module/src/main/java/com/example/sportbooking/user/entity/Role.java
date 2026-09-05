@@ -3,6 +3,8 @@ package com.example.sportbooking.user.entity;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -34,6 +36,7 @@ public class Role {
 	private String name;
 	
 	@OneToMany(mappedBy = "role", cascade = CascadeType.ALL, orphanRemoval = true)
+	@JsonBackReference
 	private Set<UserGlobalRole> usersWithThisRole = new HashSet<>();
 
 	

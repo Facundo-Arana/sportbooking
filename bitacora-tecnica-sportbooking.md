@@ -235,22 +235,32 @@
 
 ---
 
-## 14. 🟡 Bug detectado (pendiente): loop infinito de serialización JSON por relación bidireccional `User` ↔ `UserGlobalRole`
+## 14. 🔴 Loop infinito de serialización JSON por relación bidireccional `User` ↔ `UserGlobalRole`
 
 - **Síntoma**: al hacer `POST /reservations`, la respuesta JSON de `reservedByUser.globalRoles[0].user.globalRoles[0].user...` se repite indefinidamente (en la práctica termina en `StackOverflowError`).
 - **Causa raíz**: `User.globalRoles` (`@OneToMany`, mappedBy `user`) y `UserGlobalRole.user` (`@ManyToOne`) son una **relación bidireccional** sin cortar para serialización. Jackson recorre el grafo de objetos completo al serializar un `User`: `User → globalRoles → UserGlobalRole → user → globalRoles → ...`, sin ningún punto de corte. Mientras `User` nunca viajaba completo en una respuesta (ver punto 13, ítem del `@JsonIgnore`), el problema no se manifestaba — apareció recién ahora que `Reservation.reservedByUser` serializa un `User` de verdad.
 - **No es un problema de `court`/`timeBlock`/`venue`**: esas relaciones son unidireccionales desde el lado que se serializa (ninguna entity tiene una colección de vuelta que cierre el ciclo), por eso no generan el mismo loop.
-- **Fix propuesto, todavía NO aplicado — dos enfoques, de más rápido a más de fondo**:
-  1. **Parche rápido**: `@JsonManagedReference` en `User.globalRoles` + `@JsonBackReference` en `UserGlobalRole.user`. Corta el ciclo sin tocar arquitectura. Limitación: es un parche a nivel de infraestructura de serialización (no resuelve que se sigan devolviendo entities JPA completas), y el mismo problema va a reaparecer con `UserVenueRole` (misma bidireccionalidad, módulo todavía sin construir) si no se aplica ahí también.
-  2. **Fix de fondo (recomendado para resolver junto con el punto de Response DTOs, ver punto 7)**: dejar de devolver entities directo desde los controllers y mapear a DTOs de respuesta específicos por endpoint, que solo incluyan los campos que el cliente necesita. Con eso el ciclo ni existe, porque nunca se serializa la colección `globalRoles` en el contexto de una respuesta de `Reservation`.
-- **Por qué importa resolverlo ya**: bloquea en la práctica el testeo end-to-end de `reservation-module` (punto 13) — cualquier `POST`/`GET` que traiga un `reservedByUser` va a fallar.
+- **Fix aplicado — parche rápido**: `@JsonManagedReference` en `User.globalRoles` + `@JsonBackReference` en `UserGlobalRole.user`. Corta el ciclo sin tocar arquitectura.
+  - **Archivos modificados**:
+    - `user-module/src/main/java/com/example/sportbooking/user/entity/User.java`
+    - `user-module/src/main/java/com/example/sportbooking/user/entity/UserGlobalRole.java`
+  - **Limitación conocida (a propósito, no resuelta acá)**: es un parche a nivel de infraestructura de serialización, no resuelve que se sigan devolviendo entities JPA completas desde los controllers. El fix de fondo (mapear a DTOs de respuesta específicos por endpoint, ver punto 7) queda pendiente como punto 15.2.
+  - **Deuda técnica introducida**: el mismo problema va a reaparecer con `UserVenueRole` (misma bidireccionalidad `User` ↔ `UserVenueRole`, módulo todavía sin construir) si no se aplica la misma anotación ahí cuando se cree.
+  - **No verificado con `mvn compile`**: el sandbox de generación no tiene acceso a Maven Central, así que este fix quedó verificado solo por lectura de código — correr `mvn -pl user-module,reservation-module,app -am compile` antes de dar por bueno el punto 13.
+- **Por qué importaba resolverlo**: bloqueaba en la práctica el testeo end-to-end de `reservation-module` (punto 13) — cualquier `POST`/`GET` que trajera un `reservedByUser` fallaba.
 - **Concepto para profundizar** ⭐: relaciones bidireccionales en JPA y el problema de **serialización cíclica** que generan por default en cualquier librería que recorra el grafo de objetos (Jackson, pero el mismo problema aplica a otras). Es el mismo tipo de bug que el punto 3.2 (`LazyInitializationException`) en el sentido de que es invisible hasta que un flujo nuevo *usa* la relación de una forma que los flujos anteriores no usaban — vale la pena tenerlo fresco para explicar en entrevista el patrón general: "una relación bidireccional en el modelo de persistencia no debería exponerse tal cual en el modelo de la API".
 
 ---
 
 ## 15. Pendientes inmediatos para el próximo chat (prioridad, en este orden)
 
-1. 🟡 **Resolver el loop de serialización `User` ↔ `UserGlobalRole`** (punto 14) — bloqueante para poder testear `reservation-module`.
-2. 🟡 **Migrar los controllers a Response DTOs en vez de devolver entities JPA directo** — ya venía como pendiente general (punto 7) pero pasó a ser prioritario porque el bug del punto 14 es una consecuencia directa de no tenerlo. Alcance: revisar los DTOs de respuesta de `venue`, `court`, `time-block`, `court-schedule`, `reservation` y `user` (al menos `reservedByUser`/`reservedForUser`, que hoy exponen más de lo necesario — `venue` completo dentro de `court` dentro de `reservation`, por ejemplo). Definir primero un criterio (¿un DTO de respuesta por entity, reutilizado entre módulos, o uno por endpoint según lo que necesita el front?) antes de escribir código, dado el volumen de módulos ya existentes.
-3. 🟡 Una vez resuelto 1 y 2 (o al menos 1), correr el checklist de testeo de `reservation-module` (punto 13) en Postman.
+1. ✅ ~~Resolver el loop de serialización `User` ↔ `UserGlobalRole`~~ — resuelto, ver punto 14 (parche rápido con `@JsonManagedReference`/`@JsonBackReference`). Pendiente verificar con `mvn compile` en el entorno local.
+2. 🟡 **Migrar los controllers a Response DTOs en vez de devolver entities JPA directo** — ya venía como pendiente general (punto 7), sigue prioritario porque el punto 14 fue solo un parche, no el fix de fondo. Alcance: revisar los DTOs de respuesta de `venue`, `court`, `time-block`, `court-schedule`, `reservation` y `user` (al menos `reservedByUser`/`reservedForUser`, que hoy exponen más de lo necesario — `venue` completo dentro de `court` dentro de `reservation`, por ejemplo). Definir primero un criterio (¿un DTO de respuesta por entity, reutilizado entre módulos, o uno por endpoint según lo que necesita el front?) antes de escribir código, dado el volumen de módulos ya existentes.
+3. 🟡 Una vez resuelto el punto 2 (o evaluado que no es bloqueante), correr el checklist de testeo de `reservation-module` (punto 13) en Postman — ya desbloqueado por el punto 14.
 4. Retomar el resto de los pendientes de la sección 7 (CORS para Angular, credenciales hardcodeadas, `UNIQUE`/`NOT NULL` en base, `@ControllerAdvice` centralizado, testing automatizado, remodelado del esquema) cuando corresponda — ninguno es bloqueante para lo anterior.
+
+---
+
+## Convención de entrega (zips)
+
+A partir de esta entrada: cada zip generado en el chat contiene **únicamente los archivos nuevos o modificados** en esa sesión, con su ruta completa desde la raíz del proyecto (para poder copiarlos directo sobre el proyecto local sin pisar nada más). La bitácora es la fuente de verdad de *qué* cambió — cada entrada de esta bitácora que corresponda a un cambio de código debe listar explícitamente los **archivos modificados** (como en el punto 14), así el contenido del zip de esa sesión y lo documentado acá coinciden 1 a 1.

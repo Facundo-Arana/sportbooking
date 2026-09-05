@@ -1,6 +1,8 @@
 package com.example.sportbooking.user.entity;
 
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -29,8 +31,13 @@ public class UserGlobalRole {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	// @JsonBackReference: contraparte de User.globalRoles (@JsonManagedReference).
+	// Jackson deja de serializar este campo al recorrer el grafo desde User,
+	// lo que corta el ciclo. Si en el futuro se construye user-venue-role-module,
+	// UserVenueRole.user va a necesitar la misma anotación (misma bidireccionalidad).
 	@ManyToOne
 	@JoinColumn(name = "fk_user_id")
+	@JsonBackReference
 	private User user;
 
 	@ManyToOne
