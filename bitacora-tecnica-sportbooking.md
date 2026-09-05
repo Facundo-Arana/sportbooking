@@ -206,7 +206,7 @@
 
 ## 13. Módulo `reservation-module` — CRUD de reservas
 
-- **Estado**: 🟡 Implementado (compila, estructura verificada), **testeo end-to-end en Postman todavía NO realizado** — bloqueado en la práctica por el bug del punto 14 (el `POST /reservations` devuelve el `reservedByUser` anidado, y ahí explota el loop de serialización). Resolver el punto 14 antes de arrancar el checklist de abajo.
+- **Estado**: 🔴 Implementado y **testeado end-to-end en Postman — OK**. El checklist de abajo se corrió completo tras resolver los puntos 14 y 16 (loop de serialización + Response DTOs); las respuestas ya devuelven `ReservationResponseDTO` en vez de la entity completa, confirmado a mano en Postman.
 - **Estructura**: mismo patrón que los módulos anteriores — `entity` → `dto` → `exception` → `repository` → `service` → `controller`, package `com.example.sportbooking.reservation`.
 - **Primer módulo con tres relaciones `@ManyToOne` hacia módulos externos distintos en el mismo service**: `court` (`court-module`), `timeBlock` (`time-block-module`), `reservedByUser`/`reservedForUser` (`user-module`, dos relaciones al mismo tipo `User`). El `pom.xml` de `reservation-module` depende de los tres.
 - **`UserNotFoundException` nueva en `user-module`**: primer módulo que necesita resolver "¿existe el usuario con este id?" como una referencia externa (antes `user-module` solo validaba duplicados de email/username en el alta, nunca resolvía por id desde afuera). Mismo criterio que `CourtNotFoundException`/`TimeBlockNotFoundException`.
@@ -219,7 +219,7 @@
 - **`status`/`payment_status` como conjunto cerrado de strings validado en el service** (`VALID_STATUSES`, `VALID_PAYMENT_STATUSES`), no un `enum` de Java todavía — la columna es `varchar` sin `CHECK` constraint en la base. En el alta se fuerzan a mano en `"PENDING"` (el DTO no los lee en `create()`); en el update sí se pueden cambiar, validados contra la lista permitida.
 - **Filtros combinables en `GET /reservations`**: `?courtId=X`, `?date=YYYY-MM-DD`, o ambos juntos — pensado para pantallas típicas de un booking system ("agenda de esta cancha", "reservas de hoy", "agenda de esta cancha para hoy").
 - **Seguridad heredada sin configuración extra**: igual que los módulos anteriores, `/reservations/**` queda protegido automáticamente por `.anyRequest().authenticated()`.
-- **Pendiente de testear con Postman** (hacer recién después de resolver el punto 14):
+- **Checklist de Postman corrido — resultado OK**, incluyendo la verificación de que las respuestas usan `ReservationResponseDTO` (sin `password_hash`, sin `globalRoles`, sin loop de serialización):
   - Alta con todos los datos válidos → 201.
   - Alta sin `date`/`court_id`/`time_block_id`/`reserved_by_user_id` → 400 (cuatro casos).
   - Alta con `reserved_for_user_id` **y** `reserved_for_name` cargados a la vez → 400 (exclusión mutua).
@@ -246,7 +246,7 @@
     - `user-module/src/main/java/com/example/sportbooking/user/entity/UserGlobalRole.java`
   - **Limitación conocida (a propósito, no resuelta acá)**: es un parche a nivel de infraestructura de serialización, no resuelve que se sigan devolviendo entities JPA completas desde los controllers. El fix de fondo (mapear a DTOs de respuesta específicos por endpoint, ver punto 7) queda pendiente como punto 15.2.
   - **Deuda técnica introducida**: el mismo problema va a reaparecer con `UserVenueRole` (misma bidireccionalidad `User` ↔ `UserVenueRole`, módulo todavía sin construir) si no se aplica la misma anotación ahí cuando se cree.
-  - **No verificado con `mvn compile`**: el sandbox de generación no tiene acceso a Maven Central, así que este fix quedó verificado solo por lectura de código — correr `mvn -pl user-module,reservation-module,app -am compile` antes de dar por bueno el punto 13.
+  - **Verificado**: compila (`mvn compile`) y probado end-to-end en Postman — ver punto 13 y punto 16 (el fix de fondo terminó siendo el Response DTO, este parche quedó como defensa en profundidad).
 - **Por qué importaba resolverlo**: bloqueaba en la práctica el testeo end-to-end de `reservation-module` (punto 13) — cualquier `POST`/`GET` que trajera un `reservedByUser` fallaba.
 - **Concepto para profundizar** ⭐: relaciones bidireccionales en JPA y el problema de **serialización cíclica** que generan por default en cualquier librería que recorra el grafo de objetos (Jackson, pero el mismo problema aplica a otras). Es el mismo tipo de bug que el punto 3.2 (`LazyInitializationException`) en el sentido de que es invisible hasta que un flujo nuevo *usa* la relación de una forma que los flujos anteriores no usaban — vale la pena tenerlo fresco para explicar en entrevista el patrón general: "una relación bidireccional en el modelo de persistencia no debería exponerse tal cual en el modelo de la API".
 
@@ -254,10 +254,50 @@
 
 ## 15. Pendientes inmediatos para el próximo chat (prioridad, en este orden)
 
-1. ✅ ~~Resolver el loop de serialización `User` ↔ `UserGlobalRole`~~ — resuelto, ver punto 14 (parche rápido con `@JsonManagedReference`/`@JsonBackReference`). Pendiente verificar con `mvn compile` en el entorno local.
-2. 🟡 **Migrar los controllers a Response DTOs en vez de devolver entities JPA directo** — ya venía como pendiente general (punto 7), sigue prioritario porque el punto 14 fue solo un parche, no el fix de fondo. Alcance: revisar los DTOs de respuesta de `venue`, `court`, `time-block`, `court-schedule`, `reservation` y `user` (al menos `reservedByUser`/`reservedForUser`, que hoy exponen más de lo necesario — `venue` completo dentro de `court` dentro de `reservation`, por ejemplo). Definir primero un criterio (¿un DTO de respuesta por entity, reutilizado entre módulos, o uno por endpoint según lo que necesita el front?) antes de escribir código, dado el volumen de módulos ya existentes.
-3. 🟡 Una vez resuelto el punto 2 (o evaluado que no es bloqueante), correr el checklist de testeo de `reservation-module` (punto 13) en Postman — ya desbloqueado por el punto 14.
-4. Retomar el resto de los pendientes de la sección 7 (CORS para Angular, credenciales hardcodeadas, `UNIQUE`/`NOT NULL` en base, `@ControllerAdvice` centralizado, testing automatizado, remodelado del esquema) cuando corresponda — ninguno es bloqueante para lo anterior.
+1. ✅ ~~Resolver el loop de serialización `User` ↔ `UserGlobalRole`~~ — resuelto, ver punto 14. Confirmado con `mvn compile` en el entorno local.
+2. ✅ ~~Migrar los controllers a Response DTOs~~ — resuelto, ver punto 16. Confirmado con `mvn compile` y con testeo real en Postman: las respuestas ya no exponen `password_hash`/`globalRoles`.
+3. ✅ ~~Checklist de testeo de `reservation-module` en Postman~~ — corrido completo, OK (ver punto 13).
+4. 🟡 **`reservation-module` no valida que `court` y `timeBlock` sean del mismo venue** — ver punto 17, deferido a propósito.
+5. Retomar el resto de los pendientes de la sección 7 (CORS para Angular, credenciales hardcodeadas, `UNIQUE`/`NOT NULL` en base, `@ControllerAdvice` centralizado, testing automatizado, remodelado del esquema) cuando corresponda — ninguno es bloqueante para lo anterior.
+
+---
+
+## 16. 🔴 Migración de los controllers a Response DTOs (fix de fondo del punto 14)
+
+- **Criterio elegido**: un Response DTO por entity (no uno por endpoint), reutilizado en `create`/`findAll`/`findById`/`update` de cada controller. Si algún endpoint puntual necesita más adelante una forma de respuesta distinta, se arma un DTO a medida para ese caso sin tocar el DTO general.
+- **Mecanismo de mapeo — MapStruct**: primer uso real de la dependencia en el proyecto (estaba en el `pom.xml` desde el principio, pero sin ningún `@Mapper` hasta ahora). Se agregó `lombok-mapstruct-binding` al `pom.xml` raíz (en `annotationProcessorPaths`, junto a `mapstruct-processor` y `lombok`) porque sin ese binding, Lombok y MapStruct-processor pueden generar código en "rounds" de anotaciones que no se ven entre sí — el binding fuerza a MapStruct a esperar a que Lombok termine de generar los getters/setters de una clase antes de mapearla.
+- **Dónde vive el mapeo — en el controller, no en el service**: el service sigue devolviendo entities (`Venue`, `Court`, etc.); el controller inyecta el `XxxMapper` correspondiente y lo llama justo antes de armar el `ResponseEntity`. Motivo: la capa de servicio trabaja con el modelo de dominio (JPA), no con el contrato de la API REST — si mañana otro consumidor del service (un job batch, un test) necesita la entity completa, no tiene que lidiar con un DTO recortado pensado para HTTP.
+- **Estructura en cascada, igual que las relaciones `@ManyToOne` entre módulos**: cada Response DTO nuevo referencia los Response DTOs de sus módulos dependientes (no ids sueltos), y cada Mapper nuevo usa (`@Mapper(uses = ...)`) los mappers de esos módulos:
+  - `VenueResponseDTO` (`venue-module`) — sin dependencias, es la hoja del árbol.
+  - `CourtResponseDTO` / `TimeBlockResponseDTO` — cada uno con un `VenueResponseDTO venue` anidado (`CourtMapper`/`TimeBlockMapper` usan `VenueMapper`).
+  - `CourtScheduleResponseDTO` — con `CourtResponseDTO court` y `TimeBlockResponseDTO timeBlock` anidados (`CourtScheduleMapper` usa `CourtMapper` y `TimeBlockMapper`).
+  - `UserResponseDTO` (`user-module`) — sin `password_hash` ni `globalRoles`: no es que se "escondan" con `@JsonIgnore`/`@JsonBackReference` como en la entity (ver punto 13 y 14), directamente no existen en la forma que viaja por la API.
+  - `ReservationResponseDTO` — el más grande: `CourtResponseDTO court`, `TimeBlockResponseDTO timeBlock`, `UserResponseDTO reservedByUser`, `UserResponseDTO reservedForUser` (puede ser `null`, MapStruct genera el null-check solo). `ReservationMapper` usa `CourtMapper`, `TimeBlockMapper` y `UserMapper` (este último resuelve los dos campos `User` del mismo tipo sin declararse dos veces).
+- **Por qué esto es el fix de fondo del punto 14, no otro parche**: con `ReservationResponseDTO` en uso, `reservedByUser`/`reservedForUser` nunca vuelven a ser un `User` completo — son `UserResponseDTO`, que no tiene forma de llegar a `UserGlobalRole` porque el campo `globalRoles` ni siquiera existe en el DTO. El parche `@JsonManagedReference`/`@JsonBackReference` en `User`/`UserGlobalRole` (punto 14) queda **redundante para las respuestas actuales de la API**, pero se deja igual como defensa en profundidad, por si algún endpoint futuro devuelve la entity `User` directo por error.
+- **`UserController` no existe / no se tocó**: `user-module` no tiene controller propio — hoy `User` solo se expone vía `auth-module` (que ya arma sus propias respuestas curadas a mano) y, a partir de ahora, vía `UserResponseDTO` anidado en `reservation-module`. `UserMapper` se creó igual porque `ReservationMapper` lo necesita.
+- **Archivos nuevos** (6 Response DTOs + 6 Mappers):
+  - `venue-module/.../dto/VenueResponseDTO.java`, `venue-module/.../mapper/VenueMapper.java`
+  - `court-module/.../dto/CourtResponseDTO.java`, `court-module/.../mapper/CourtMapper.java`
+  - `time-block-module/.../dto/TimeBlockResponseDTO.java`, `time-block-module/.../mapper/TimeBlockMapper.java`
+  - `court-schedule-module/.../dto/CourtScheduleResponseDTO.java`, `court-schedule-module/.../mapper/CourtScheduleMapper.java`
+  - `user-module/.../dto/UserResponseDTO.java`, `user-module/.../mapper/UserMapper.java`
+  - `reservation-module/.../dto/ReservationResponseDTO.java`, `reservation-module/.../mapper/ReservationMapper.java`
+- **Archivos modificados**:
+  - `pom.xml` (raíz) — agregado `lombok-mapstruct-binding` en `annotationProcessorPaths`.
+  - `venue-module/.../controller/VenueController.java`, `court-module/.../controller/CourtController.java`, `time-block-module/.../controller/TimeBlockController.java`, `court-schedule-module/.../controller/CourtScheduleController.java`, `reservation-module/.../controller/ReservationController.java` — todos con el mismo cambio: constructor inyecta el `XxxMapper` además del `XxxService`, y `create`/`findAll`/`findById`/`update` mapean el resultado del service antes de devolverlo.
+- **Verificado**: compila (`mvn compile`) y probado end-to-end en Postman — las respuestas de `/venues`, `/courts`, `/time-blocks`, `/court-schedules` y `/reservations` ya usan los Response DTOs, confirmado a mano contra el JSON real devuelto por `POST /reservations` (sin `password_hash`, sin `globalRoles`, sin loop).
+- **Concepto para profundizar** ⭐: la diferencia entre el **modelo de persistencia** (entities JPA, con sus relaciones bidireccionales y su acoplamiento al schema de la base) y el **modelo de la API** (DTOs, con la forma que el contrato HTTP necesita) — y por qué mapear en el borde (controller) en vez de devolver entities directo no es solo "más prolijo", sino que es lo que evita que un cambio interno en una entity (agregar una relación, cambiar un tipo) rompa silenciosamente el contrato público de la API. MapStruct como alternativa a mapeo manual: genera el código de conversión en tiempo de compilación (no reflection en runtime, a diferencia de librerías como ModelMapper), así que un error de tipos entre entity y DTO se detecta compilando, no en producción.
+
+---
+
+## 17. 🟡 `reservation-module` no valida que `court` y `timeBlock` sean del mismo venue
+
+- **Síntoma**: detectado probando `POST /reservations` en Postman — se pudo crear una reserva combinando una `Court` del venue "Complejo Norte" (id 2) con un `TimeBlock` del venue "Complejo Sur" (id 3). El `POST` respondió 201 sin ninguna validación cruzada.
+- **Causa raíz**: es la misma categoría de validación que ya existe en `CourtScheduleService.validateSameVenue()` (ver punto 12) — dos relaciones `@ManyToOne` del mismo recurso (`court`, `timeBlock`) que deberían apuntar al mismo `venue` — pero `ReservationService` nunca la implementó. `Reservation` tiene exactamente el mismo par de relaciones que `CourtSchedule`, así que en rigor hereda el mismo problema de consistencia, solo que no se había notado hasta ahora porque el testeo de `reservation-module` estaba bloqueado por el punto 14.
+- **Fix pendiente (deferido a propósito, no bloqueante)**: replicar `validateSameVenue(Court, TimeBlock)` en `ReservationService.create()` y `.update()`, con el mismo criterio que ya usa `CourtScheduleService.update()` — revalidar contra el estado FINAL de la entity después del merge parcial, no contra el DTO crudo, para cubrir el caso de un `PUT` que solo cambia `court_id` y deja un `timeBlock` heredado de otro venue.
+- **Nota de diseño para cuando se resuelva**: el método queda duplicado literal entre `CourtScheduleService` y `ReservationService` si se copia tal cual. Vale la pena evaluar en ese momento si conviene extraerlo a un lugar compartido (¿un mapper o helper en `court-module` o `time-block-module`, ya que ambos dependen de esos dos módulos?) en vez de mantener dos copias de la misma lógica — variante del principio DRY aplicado a validaciones de negocio repetidas entre módulos.
+- **Por qué se decidió no resolverlo ahora**: decisión explícita del desarrollador durante el testeo — no es un bug que bloquee otras tareas, es una regla de negocio a agregar cuando corresponda.
+- **Concepto para profundizar**: por qué las validaciones de consistencia entre relaciones (a diferencia de las validaciones de campo simple, ver punto 2.2/2.3) tienden a aparecer tarde en el desarrollo — solo se hacen evidentes cuando dos módulos que antes se probaban por separado empiezan a combinarse en un flujo real (mismo patrón de fondo que el punto 14: un bug "invisible" hasta que un caso de uso nuevo ejercita una combinación que antes nadie probó).
 
 ---
 

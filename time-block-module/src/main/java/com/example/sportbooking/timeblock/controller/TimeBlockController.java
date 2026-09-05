@@ -16,8 +16,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.timeblock.dto.TimeBlockDTO;
-import com.example.sportbooking.timeblock.entity.TimeBlock;
+import com.example.sportbooking.timeblock.dto.TimeBlockResponseDTO;
 import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
+import com.example.sportbooking.timeblock.mapper.TimeBlockMapper;
 import com.example.sportbooking.timeblock.service.TimeBlockService;
 import com.example.sportbooking.venue.exception.VenueNotFoundException;
 
@@ -29,15 +30,17 @@ import com.example.sportbooking.venue.exception.VenueNotFoundException;
 public class TimeBlockController {
 
 	private final TimeBlockService timeBlockService;
+	private final TimeBlockMapper timeBlockMapper;
 
-	public TimeBlockController(TimeBlockService timeBlockService) {
+	public TimeBlockController(TimeBlockService timeBlockService, TimeBlockMapper timeBlockMapper) {
 		this.timeBlockService = timeBlockService;
+		this.timeBlockMapper = timeBlockMapper;
 	}
 
 	@PostMapping
 	public ResponseEntity<?> create(@RequestBody TimeBlockDTO dto) {
 		try {
-			TimeBlock created = timeBlockService.create(dto);
+			TimeBlockResponseDTO created = timeBlockMapper.toResponseDTO(timeBlockService.create(dto));
 			return ResponseEntity.status(HttpStatus.CREATED).body(created);
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -48,14 +51,15 @@ public class TimeBlockController {
 
 	// ?venueId=X opcional, mismo criterio que CourtController.findAll.
 	@GetMapping
-	public ResponseEntity<List<TimeBlock>> findAll(@RequestParam(required = false) Long venueId) {
-		return ResponseEntity.ok(timeBlockService.findAll(venueId));
+	public ResponseEntity<List<TimeBlockResponseDTO>> findAll(@RequestParam(required = false) Long venueId) {
+		return ResponseEntity
+				.ok(timeBlockService.findAll(venueId).stream().map(timeBlockMapper::toResponseDTO).toList());
 	}
 
 	@GetMapping("/{id}")
 	public ResponseEntity<?> findById(@PathVariable Long id) {
 		try {
-			return ResponseEntity.ok(timeBlockService.findById(id));
+			return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.findById(id)));
 		} catch (TimeBlockNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}
@@ -64,7 +68,7 @@ public class TimeBlockController {
 	@PutMapping("/{id}")
 	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody TimeBlockDTO dto) {
 		try {
-			return ResponseEntity.ok(timeBlockService.update(id, dto));
+			return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.update(id, dto)));
 		} catch (IllegalArgumentException e) {
 			// A diferencia de CourtController.update: acá el service SÍ puede
 			// tirar IllegalArgumentException en el update (la validación

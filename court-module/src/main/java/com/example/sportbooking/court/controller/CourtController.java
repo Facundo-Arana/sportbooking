@@ -16,8 +16,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.court.dto.CourtDTO;
-import com.example.sportbooking.court.entity.Court;
+import com.example.sportbooking.court.dto.CourtResponseDTO;
 import com.example.sportbooking.court.exception.CourtNotFoundException;
+import com.example.sportbooking.court.mapper.CourtMapper;
 import com.example.sportbooking.court.service.CourtService;
 import com.example.sportbooking.venue.exception.VenueNotFoundException;
 
@@ -31,15 +32,17 @@ import com.example.sportbooking.venue.exception.VenueNotFoundException;
 public class CourtController {
 
 	private final CourtService courtService;
+	private final CourtMapper courtMapper;
 
-	public CourtController(CourtService courtService) {
+	public CourtController(CourtService courtService, CourtMapper courtMapper) {
 		this.courtService = courtService;
+		this.courtMapper = courtMapper;
 	}
 
 	@PostMapping
 	public ResponseEntity<?> create(@RequestBody CourtDTO dto) {
 		try {
-			Court created = courtService.create(dto);
+			CourtResponseDTO created = courtMapper.toResponseDTO(courtService.create(dto));
 			return ResponseEntity.status(HttpStatus.CREATED).body(created);
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -51,14 +54,14 @@ public class CourtController {
 	// ?venueId=X es opcional: sin el param devuelve todas las canchas, con el
 	// param filtra por sede (pantalla "canchas de esta sede" del front).
 	@GetMapping
-	public ResponseEntity<List<Court>> findAll(@RequestParam(required = false) Long venueId) {
-		return ResponseEntity.ok(courtService.findAll(venueId));
+	public ResponseEntity<List<CourtResponseDTO>> findAll(@RequestParam(required = false) Long venueId) {
+		return ResponseEntity.ok(courtService.findAll(venueId).stream().map(courtMapper::toResponseDTO).toList());
 	}
 
 	@GetMapping("/{id}")
 	public ResponseEntity<?> findById(@PathVariable Long id) {
 		try {
-			return ResponseEntity.ok(courtService.findById(id));
+			return ResponseEntity.ok(courtMapper.toResponseDTO(courtService.findById(id)));
 		} catch (CourtNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}
@@ -67,7 +70,7 @@ public class CourtController {
 	@PutMapping("/{id}")
 	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody CourtDTO dto) {
 		try {
-			return ResponseEntity.ok(courtService.update(id, dto));
+			return ResponseEntity.ok(courtMapper.toResponseDTO(courtService.update(id, dto)));
 		} catch (CourtNotFoundException | VenueNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}

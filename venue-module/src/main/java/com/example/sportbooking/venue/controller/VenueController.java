@@ -15,8 +15,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.venue.dto.VenueDTO;
-import com.example.sportbooking.venue.entity.Venue;
+import com.example.sportbooking.venue.dto.VenueResponseDTO;
 import com.example.sportbooking.venue.exception.VenueNotFoundException;
+import com.example.sportbooking.venue.mapper.VenueMapper;
 import com.example.sportbooking.venue.service.VenueService;
 
 // Nota: no hay ninguna regla nueva de seguridad para "/venues/**". La
@@ -30,15 +31,17 @@ import com.example.sportbooking.venue.service.VenueService;
 public class VenueController {
 
 	private final VenueService venueService;
+	private final VenueMapper venueMapper;
 
-	public VenueController(VenueService venueService) {
+	public VenueController(VenueService venueService, VenueMapper venueMapper) {
 		this.venueService = venueService;
+		this.venueMapper = venueMapper;
 	}
 
 	@PostMapping
 	public ResponseEntity<?> create(@RequestBody VenueDTO dto) {
 		try {
-			Venue created = venueService.create(dto);
+			VenueResponseDTO created = venueMapper.toResponseDTO(venueService.create(dto));
 			return ResponseEntity.status(HttpStatus.CREATED).body(created);
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -46,14 +49,21 @@ public class VenueController {
 	}
 
 	@GetMapping
-	public ResponseEntity<List<Venue>> findAll() {
-		return ResponseEntity.ok(venueService.findAll());
+	public ResponseEntity<List<VenueResponseDTO>> findAll() {
+		// El mapeo entity -> DTO pasa acá, en el controller (el "borde" de la
+		// API), no en el service: VenueService.findAll() sigue devolviendo
+		// List<Venue> porque la capa de servicio trabaja con el modelo de
+		// dominio (entities), no con el contrato de la API. Si mañana
+		// aparece otro consumidor del service (un job batch, un test) que
+		// necesita el Venue completo, no tiene que lidiar con un DTO
+		// recortado para la API REST.
+		return ResponseEntity.ok(venueService.findAll().stream().map(venueMapper::toResponseDTO).toList());
 	}
 
 	@GetMapping("/{id}")
 	public ResponseEntity<?> findById(@PathVariable Long id) {
 		try {
-			return ResponseEntity.ok(venueService.findById(id));
+			return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.findById(id)));
 		} catch (VenueNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}
@@ -62,7 +72,7 @@ public class VenueController {
 	@PutMapping("/{id}")
 	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody VenueDTO dto) {
 		try {
-			return ResponseEntity.ok(venueService.update(id, dto));
+			return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.update(id, dto)));
 		} catch (VenueNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}

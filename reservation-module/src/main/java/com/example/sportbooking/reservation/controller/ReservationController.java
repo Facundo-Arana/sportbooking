@@ -18,8 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.reservation.dto.ReservationDTO;
-import com.example.sportbooking.reservation.entity.Reservation;
+import com.example.sportbooking.reservation.dto.ReservationResponseDTO;
 import com.example.sportbooking.reservation.exception.ReservationNotFoundException;
+import com.example.sportbooking.reservation.mapper.ReservationMapper;
 import com.example.sportbooking.reservation.service.ReservationService;
 import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
 import com.example.sportbooking.user.exception.UserNotFoundException;
@@ -32,15 +33,17 @@ import com.example.sportbooking.user.exception.UserNotFoundException;
 public class ReservationController {
 
 	private final ReservationService reservationService;
+	private final ReservationMapper reservationMapper;
 
-	public ReservationController(ReservationService reservationService) {
+	public ReservationController(ReservationService reservationService, ReservationMapper reservationMapper) {
 		this.reservationService = reservationService;
+		this.reservationMapper = reservationMapper;
 	}
 
 	@PostMapping
 	public ResponseEntity<?> create(@RequestBody ReservationDTO dto) {
 		try {
-			Reservation created = reservationService.create(dto);
+			ReservationResponseDTO created = reservationMapper.toResponseDTO(reservationService.create(dto));
 			return ResponseEntity.status(HttpStatus.CREATED).body(created);
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -62,15 +65,17 @@ public class ReservationController {
 	// param en formato ISO-8601 (Spring Boot ya registra ese formato para
 	// java.time por defecto, sin necesidad de @DateTimeFormat).
 	@GetMapping
-	public ResponseEntity<List<Reservation>> findAll(@RequestParam(required = false) Long courtId,
+	public ResponseEntity<List<ReservationResponseDTO>> findAll(@RequestParam(required = false) Long courtId,
 			@RequestParam(required = false) LocalDate date) {
-		return ResponseEntity.ok(reservationService.findAll(courtId, date));
+		return ResponseEntity
+				.ok(reservationService.findAll(courtId, date).stream().map(reservationMapper::toResponseDTO)
+						.toList());
 	}
 
 	@GetMapping("/{id}")
 	public ResponseEntity<?> findById(@PathVariable Long id) {
 		try {
-			return ResponseEntity.ok(reservationService.findById(id));
+			return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.findById(id)));
 		} catch (ReservationNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}
@@ -79,7 +84,7 @@ public class ReservationController {
 	@PutMapping("/{id}")
 	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody ReservationDTO dto) {
 		try {
-			return ResponseEntity.ok(reservationService.update(id, dto));
+			return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.update(id, dto)));
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
 		} catch (ReservationNotFoundException | CourtNotFoundException | TimeBlockNotFoundException

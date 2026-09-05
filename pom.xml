@@ -145,6 +145,19 @@
                             <artifactId>lombok</artifactId>
                             <version>1.18.30</version>
                         </path>
+                        <!-- Sin esto, Lombok y MapStruct-processor pueden correr en
+                             "rounds" de compilación que no ven las mismas versiones
+                             generadas de los getters/setters entre sí (el orden de
+                             arriba ya ayuda, pero no alcanza): este binding hace que
+                             MapStruct espere a que Lombok termine de generar el
+                             bytecode de una clase antes de mapearla. Primer uso real
+                             de MapStruct en el proyecto (hasta ahora la dependencia
+                             estaba declarada pero sin ningún @Mapper todavía). -->
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>0.2.0</version>
+                        </path>
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>

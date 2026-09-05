@@ -17,8 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.courtschedule.dto.CourtScheduleDTO;
-import com.example.sportbooking.courtschedule.entity.CourtSchedule;
+import com.example.sportbooking.courtschedule.dto.CourtScheduleResponseDTO;
 import com.example.sportbooking.courtschedule.exception.CourtScheduleNotFoundException;
+import com.example.sportbooking.courtschedule.mapper.CourtScheduleMapper;
 import com.example.sportbooking.courtschedule.service.CourtScheduleService;
 import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
 
@@ -30,15 +31,18 @@ import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
 public class CourtScheduleController {
 
 	private final CourtScheduleService courtScheduleService;
+	private final CourtScheduleMapper courtScheduleMapper;
 
-	public CourtScheduleController(CourtScheduleService courtScheduleService) {
+	public CourtScheduleController(CourtScheduleService courtScheduleService,
+			CourtScheduleMapper courtScheduleMapper) {
 		this.courtScheduleService = courtScheduleService;
+		this.courtScheduleMapper = courtScheduleMapper;
 	}
 
 	@PostMapping
 	public ResponseEntity<?> create(@RequestBody CourtScheduleDTO dto) {
 		try {
-			CourtSchedule created = courtScheduleService.create(dto);
+			CourtScheduleResponseDTO created = courtScheduleMapper.toResponseDTO(courtScheduleService.create(dto));
 			return ResponseEntity.status(HttpStatus.CREATED).body(created);
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -49,14 +53,15 @@ public class CourtScheduleController {
 
 	// ?courtId=X opcional, mismo criterio que CourtController/TimeBlockController.
 	@GetMapping
-	public ResponseEntity<List<CourtSchedule>> findAll(@RequestParam(required = false) Long courtId) {
-		return ResponseEntity.ok(courtScheduleService.findAll(courtId));
+	public ResponseEntity<List<CourtScheduleResponseDTO>> findAll(@RequestParam(required = false) Long courtId) {
+		return ResponseEntity
+				.ok(courtScheduleService.findAll(courtId).stream().map(courtScheduleMapper::toResponseDTO).toList());
 	}
 
 	@GetMapping("/{id}")
 	public ResponseEntity<?> findById(@PathVariable Long id) {
 		try {
-			return ResponseEntity.ok(courtScheduleService.findById(id));
+			return ResponseEntity.ok(courtScheduleMapper.toResponseDTO(courtScheduleService.findById(id)));
 		} catch (CourtScheduleNotFoundException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		}
@@ -65,7 +70,7 @@ public class CourtScheduleController {
 	@PutMapping("/{id}")
 	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody CourtScheduleDTO dto) {
 		try {
-			return ResponseEntity.ok(courtScheduleService.update(id, dto));
+			return ResponseEntity.ok(courtScheduleMapper.toResponseDTO(courtScheduleService.update(id, dto)));
 		} catch (IllegalArgumentException e) {
 			// Igual motivo que TimeBlockController.update: el service puede
 			// tirar IllegalArgumentException en el update (day_of_week fuera
