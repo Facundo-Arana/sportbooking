@@ -67,6 +67,12 @@ public class ReservationService {
 				.orElseThrow(() -> new CourtNotFoundException(dto.getCourt_id()));
 		TimeBlock timeBlock = timeBlockRepository.findById(dto.getTime_block_id())
 				.orElseThrow(() -> new TimeBlockNotFoundException(dto.getTime_block_id()));
+
+		// Punto 17 de la bitácora: misma validación cruzada que ya existe en
+		// CourtScheduleService (ver ese service) - court y timeBlock son las
+		// mismas dos relaciones, así que heredan la misma regla de negocio.
+		validateSameVenue(court, timeBlock);
+
 		User reservedByUser = userRepository.findById(dto.getReserved_by_user_id())
 				.orElseThrow(() -> new UserNotFoundException(dto.getReserved_by_user_id()));
 
@@ -140,6 +146,12 @@ public class ReservationService {
 			validatePaymentStatus(dto.getPayment_status());
 			reservation.setPayment_status(dto.getPayment_status());
 		}
+
+		// Re-validamos contra el estado FINAL de la entity (mismo criterio
+		// que en CourtScheduleService.update()): si el PUT trae solo
+		// court_id, el timeBlock heredado del estado previo puede quedar
+		// apuntando a otro venue, y viceversa.
+		validateSameVenue(reservation.getCourt(), reservation.getTimeBlock());
 
 		// Re-validamos contra el estado FINAL de la entity, mismo criterio
 		// que validateTimeRange/validateSameVenue en los módulos anteriores:
@@ -217,6 +229,21 @@ public class ReservationService {
 			// el estado actual" (409, ver ReservationController).
 			throw new IllegalStateException(
 					"Ya existe una reserva activa para esa cancha, franja horaria y fecha");
+		}
+	}
+
+	// Duplicado literal de CourtScheduleService.validateSameVenue() (ver
+	// punto 17 de la bitácora): court y timeBlock deben pertenecer al mismo
+	// venue, no tendría sentido reservar una cancha del venue A en una
+	// franja horaria definida para el venue B. Se mantiene duplicado a
+	// propósito por ahora (mismo criterio que el resto del proyecto: no
+	// abstraer hasta tener un tercer caso real) - candidato a extraer a un
+	// helper compartido si aparece una tercera necesidad.
+	private void validateSameVenue(Court court, TimeBlock timeBlock) {
+		Long courtVenueId = court.getVenue().getId();
+		Long timeBlockVenueId = timeBlock.getVenue().getId();
+		if (!courtVenueId.equals(timeBlockVenueId)) {
+			throw new IllegalArgumentException("La cancha y la franja horaria deben pertenecer al mismo venue");
 		}
 	}
 
