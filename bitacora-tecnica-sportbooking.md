@@ -114,7 +114,7 @@
 
 ## 7. Pendientes identificados (no resueltos aún)
 
-- 🟡 **CORS** configurado para `localhost:3000` (puerto de React) — mencionaste que el front sería Angular, que por defecto usa `4200`. Se va a romper silenciosamente en cuanto se conecte el front real.
+- ✅ ~~**CORS** configurado para `localhost:3000` (puerto de React)~~ — resuelto, ver punto 18. El problema real no era solo el puerto: era un `CorsFilter` suelto que corría después del filtro de Spring Security.
 - 🟡 **Credenciales hardcodeadas en `application.properties`** (usuario/password de Postgres, `jwt.secret`) en texto plano. Recomendación pendiente de aplicar: variables de entorno o `application-local.properties` fuera de Git, con un `.example` como referencia en el repo.
 - 🟡 `spring.application.name=platform` — quedó desactualizado tras el rename a `sportbooking` (solo estético, aparece en los logs).
 - 🟡 Falta constraint `UNIQUE` en `email`/`username` a nivel de base de datos — hoy la unicidad se valida solo en la capa de aplicación (`UserService`), lo cual no protege ante condiciones de carrera (dos requests simultáneos).
@@ -257,8 +257,10 @@
 1. ✅ ~~Resolver el loop de serialización `User` ↔ `UserGlobalRole`~~ — resuelto, ver punto 14. Confirmado con `mvn compile` en el entorno local.
 2. ✅ ~~Migrar los controllers a Response DTOs~~ — resuelto, ver punto 16. Confirmado con `mvn compile` y con testeo real en Postman: las respuestas ya no exponen `password_hash`/`globalRoles`.
 3. ✅ ~~Checklist de testeo de `reservation-module` en Postman~~ — corrido completo, OK (ver punto 13).
-4. 🟡 **`reservation-module` no valida que `court` y `timeBlock` sean del mismo venue** — ver punto 17, deferido a propósito.
-5. Retomar el resto de los pendientes de la sección 7 (CORS para Angular, credenciales hardcodeadas, `UNIQUE`/`NOT NULL` en base, `@ControllerAdvice` centralizado, testing automatizado, remodelado del esquema) cuando corresponda — ninguno es bloqueante para lo anterior.
+4. ✅ ~~`reservation-module` no valida que `court` y `timeBlock` sean del mismo venue~~ — resuelto, ver punto 17.
+5. ✅ ~~CORS configurado para el puerto de React, y mal integrado con Spring Security~~ — resuelto, ver punto 18.
+6. Pendiente de **compilar y testear en el entorno local** los cambios de los puntos 17 y 18 (`mvn compile` + Postman/front real para el caso de CORS) — no se pudo verificar en este chat por falta de entorno con Maven/red completa.
+7. Retomar el resto de los pendientes de la sección 7 (credenciales hardcodeadas, `spring.application.name` desactualizado — este último ya parece corregido, confirmar —, `UNIQUE`/`NOT NULL` en base, `@ControllerAdvice` centralizado, testing automatizado, remodelado del esquema, módulo `user_venue_role` sin construir) cuando corresponda — ninguno es bloqueante para lo anterior.
 
 ---
 
@@ -290,14 +292,30 @@
 
 ---
 
-## 17. 🟡 `reservation-module` no valida que `court` y `timeBlock` sean del mismo venue
+## 17. 🔴 `reservation-module` no valida que `court` y `timeBlock` sean del mismo venue
 
 - **Síntoma**: detectado probando `POST /reservations` en Postman — se pudo crear una reserva combinando una `Court` del venue "Complejo Norte" (id 2) con un `TimeBlock` del venue "Complejo Sur" (id 3). El `POST` respondió 201 sin ninguna validación cruzada.
 - **Causa raíz**: es la misma categoría de validación que ya existe en `CourtScheduleService.validateSameVenue()` (ver punto 12) — dos relaciones `@ManyToOne` del mismo recurso (`court`, `timeBlock`) que deberían apuntar al mismo `venue` — pero `ReservationService` nunca la implementó. `Reservation` tiene exactamente el mismo par de relaciones que `CourtSchedule`, así que en rigor hereda el mismo problema de consistencia, solo que no se había notado hasta ahora porque el testeo de `reservation-module` estaba bloqueado por el punto 14.
-- **Fix pendiente (deferido a propósito, no bloqueante)**: replicar `validateSameVenue(Court, TimeBlock)` en `ReservationService.create()` y `.update()`, con el mismo criterio que ya usa `CourtScheduleService.update()` — revalidar contra el estado FINAL de la entity después del merge parcial, no contra el DTO crudo, para cubrir el caso de un `PUT` que solo cambia `court_id` y deja un `timeBlock` heredado de otro venue.
-- **Nota de diseño para cuando se resuelva**: el método queda duplicado literal entre `CourtScheduleService` y `ReservationService` si se copia tal cual. Vale la pena evaluar en ese momento si conviene extraerlo a un lugar compartido (¿un mapper o helper en `court-module` o `time-block-module`, ya que ambos dependen de esos dos módulos?) en vez de mantener dos copias de la misma lógica — variante del principio DRY aplicado a validaciones de negocio repetidas entre módulos.
-- **Por qué se decidió no resolverlo ahora**: decisión explícita del desarrollador durante el testeo — no es un bug que bloquee otras tareas, es una regla de negocio a agregar cuando corresponda.
+- **Fix aplicado**: se replicó `validateSameVenue(Court, TimeBlock)` en `ReservationService`, duplicado literal de `CourtScheduleService.validateSameVenue()`, invocado en dos puntos:
+  - `create()`: justo después de resolver `court` y `timeBlock` desde sus repositorios, antes de chequear el solapamiento de turno.
+  - `update()`: después de aplicar los cambios parciales sobre la entity, revalidando contra el estado FINAL (mismo criterio que `CourtScheduleService.update()` y que `validateReservedFor` en el propio `ReservationService`) — cubre el caso de un `PUT` que solo trae `court_id` y deja un `timeBlock` heredado de otro venue.
+  - El controller no se tocó: `IllegalArgumentException` ya se capturaba ahí y mapeaba a 400, así que el nuevo caso cae solo en el flujo existente.
+- **Nota de diseño — duplicación aceptada a propósito**: el método queda duplicado literal entre `CourtScheduleService` y `ReservationService`. Se mantiene así (mismo criterio que el resto del proyecto: no abstraer hasta tener un tercer caso real) — candidato a extraer a un helper compartido (¿en `court-module` o `time-block-module`, ya que ambos dependen de esos dos módulos?) si aparece una tercera necesidad de la misma validación.
+- **Archivos modificados**: `reservation-module/.../service/ReservationService.java`.
 - **Concepto para profundizar**: por qué las validaciones de consistencia entre relaciones (a diferencia de las validaciones de campo simple, ver punto 2.2/2.3) tienden a aparecer tarde en el desarrollo — solo se hacen evidentes cuando dos módulos que antes se probaban por separado empiezan a combinarse en un flujo real (mismo patrón de fondo que el punto 14: un bug "invisible" hasta que un caso de uso nuevo ejercita una combinación que antes nadie probó).
+
+---
+
+## 18. 🔴 CORS: puerto incorrecto + `CorsFilter` mal integrado con Spring Security
+
+- **Síntoma esperado (no llegó a reproducirse con el front real todavía)**: `CorsConfigurations` apuntaba a `localhost:3000` (puerto de React) en vez de `localhost:4200` (puerto por defecto de `ng serve`), señalado como pendiente desde el punto 7.
+- **Causa raíz, más profunda que el puerto**: la config original declaraba un `@Bean CorsFilter` suelto, sin relación con `SecurityConfiguration`. Un `Filter` registrado así toma el orden por defecto de Spring Boot (`Ordered.LOWEST_PRECEDENCE`), que corre **después** del filtro de Spring Security (registrado muy temprano, con `SecurityProperties.DEFAULT_FILTER_ORDER`). Consecuencia práctica: un preflight `OPTIONS` a un endpoint protegido (por ejemplo `/reservations`) llega primero a Spring Security, que lo rechaza con 401/403 por no venir autenticado — el `CorsFilter` nunca llega a agregar los headers de CORS a esa respuesta. El browser lo reporta como error de CORS (no como un 401 legible), así que hubiera sido bastante confuso de diagnosticar recién con el front conectado.
+- **Fix aplicado**:
+  - `CorsConfigurations` ahora expone un `CorsConfigurationSource` (no un `CorsFilter`), con `setAllowedOrigins(List.of("http://localhost:4200"))`.
+  - `SecurityConfiguration.securityFilterChain()` recibe ese `CorsConfigurationSource` por parámetro y lo engancha con `.cors(cors -> cors.configurationSource(corsConfigurationSource))`, integrándolo directo en la cadena de filtros de Security en el punto correcto (antes de la autorización).
+  - Se agregó `.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()` en `authorizeHttpRequests`, explícito y para cualquier path — así el preflight nunca depende de si el endpoint de destino requiere auth o no, independientemente de sutilezas de orden de filtros.
+- **Archivos modificados**: `auth-module/.../config/CorsConfigurations.java`, `auth-module/.../config/SecurityConfiguration.java`.
+- **Concepto para profundizar** ⭐: en Spring Security, cualquier `Filter` que necesite correr *antes* de la autorización (CORS, pero el mismo problema aplica a otros casos) tiene que integrarse explícitamente en la cadena vía la API de `HttpSecurity` (`.cors()`, `.addFilterBefore()`, etc.) — declararlo como `@Bean` suelto no garantiza el orden correcto respecto del filtro de Security, que se registra con un orden deliberadamente temprano (`SecurityProperties.DEFAULT_FILTER_ORDER`). Es un buen ejemplo real de "el orden de los filtros importa" para explicar en entrevista, y de por qué un preflight CORS fallido puede disfrazarse de error de CORS en el browser cuando la causa real es de autorización.
 
 ---
 
