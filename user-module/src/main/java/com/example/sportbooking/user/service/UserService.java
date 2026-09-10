@@ -21,12 +21,16 @@ public class UserService {
 
 	public User registerUser(UserDTO user) {
 
+		// IllegalArgumentException (no RuntimeException pelada): mismo tipo que
+		// usan VenueService/CourtService/TimeBlockService para validaciones de
+		// negocio, así GlobalExceptionHandler la mapea a 400 sin necesitar un
+		// catch específico en AuthController (ver bitácora punto 20).
 		if (userRepository.findByEmail(user.getEmail()).isPresent()) {
-			throw new RuntimeException("Ya existe un usuario registrado con ese email");
+			throw new IllegalArgumentException("Ya existe un usuario registrado con ese email");
 		}
 
 		if (userRepository.findByUsername(user.getUsername()).isPresent()) {
-			throw new RuntimeException("Ese nombre de usuario ya está en uso");
+			throw new IllegalArgumentException("Ese nombre de usuario ya está en uso");
 		}
 
 		// encriptar contraseña

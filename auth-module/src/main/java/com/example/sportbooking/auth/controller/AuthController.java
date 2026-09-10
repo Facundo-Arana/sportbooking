@@ -56,16 +56,12 @@ public class AuthController {
 		                .body(Map.of("error", "email y password son obligatorios"));
 		    }
 
-		    try {
-		        User newUser = userService.registerUser(user);
+		    User newUser = userService.registerUser(user);
 
-		        return ResponseEntity.ok(Map.of(
-		                "message", "Usuario registrado con éxito",
-		                "username", newUser.getUsername()
-		        ));
-		    } catch (RuntimeException e) {
-		        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		    }
+		    return ResponseEntity.ok(Map.of(
+		            "message", "Usuario registrado con éxito",
+		            "username", newUser.getUsername()
+		    ));
 		
 	}
 	

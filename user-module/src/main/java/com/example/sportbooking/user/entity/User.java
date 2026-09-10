@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,8 +37,17 @@ public class User {
 	@GeneratedValue(strategy=GenerationType.IDENTITY)
 	private Long id;
 	
+	// unique=true + nullable=false: hasta ahora la unicidad de username/email
+	// se validaba solo en UserService (findByUsername/findByEmail antes del
+	// save), lo cual no protege ante dos requests simultáneos insertando el
+	// mismo valor (race condition: ambos pasan la validación de app antes de
+	// que cualquiera haga commit). Estas anotaciones hacen que Hibernate
+	// agregue el constraint real en la base (ddl-auto=update), que es la
+	// única defensa efectiva contra ese caso — ver bitácora punto 7.
+	@Column(unique = true, nullable = false)
 	private String username;
 	
+	@Column(unique = true, nullable = false)
 	private String email;
 	
 	// @JsonIgnore: hasta ahora User nunca viajaba completo en una respuesta
@@ -47,6 +57,7 @@ public class User {
 	// .reservedByUser / .reservedForUser), así que sin este @JsonIgnore el
 	// hash de la contraseña se filtraría en la respuesta de /reservations.
 	@JsonIgnore
+	@Column(nullable = false)
 	private String password_hash;
 	
 	private String name;

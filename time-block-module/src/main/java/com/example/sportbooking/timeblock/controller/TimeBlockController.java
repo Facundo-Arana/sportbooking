@@ -1,7 +1,6 @@
 package com.example.sportbooking.timeblock.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,14 +16,20 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.timeblock.dto.TimeBlockDTO;
 import com.example.sportbooking.timeblock.dto.TimeBlockResponseDTO;
-import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
 import com.example.sportbooking.timeblock.mapper.TimeBlockMapper;
 import com.example.sportbooking.timeblock.service.TimeBlockService;
-import com.example.sportbooking.venue.exception.VenueNotFoundException;
 
 // Mismo criterio que VenueController/CourtController: sin reglas nuevas de
 // seguridad. ".anyRequest().authenticated()" en SecurityConfiguration ya
 // protege "/time-blocks/**" automáticamente.
+//
+// Sin try/catch: TimeBlockNotFoundException/VenueNotFoundException/
+// IllegalArgumentException las traduce el GlobalExceptionHandler
+// (app-module) -- ver bitácora punto 20. Antes update() tenía un catch
+// extra de IllegalArgumentException que CourtController no necesitaba (la
+// re-validación de end_time > start_time tras el merge parcial); ahora ese
+// matiz desaparece del controller porque el handler ya cubre
+// IllegalArgumentException en cualquier método, sin distinción.
 @RestController
 @RequestMapping("/time-blocks")
 public class TimeBlockController {
@@ -38,15 +43,9 @@ public class TimeBlockController {
 	}
 
 	@PostMapping
-	public ResponseEntity<?> create(@RequestBody TimeBlockDTO dto) {
-		try {
-			TimeBlockResponseDTO created = timeBlockMapper.toResponseDTO(timeBlockService.create(dto));
-			return ResponseEntity.status(HttpStatus.CREATED).body(created);
-		} catch (IllegalArgumentException e) {
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<TimeBlockResponseDTO> create(@RequestBody TimeBlockDTO dto) {
+		TimeBlockResponseDTO created = timeBlockMapper.toResponseDTO(timeBlockService.create(dto));
+		return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
 	// ?venueId=X opcional, mismo criterio que CourtController.findAll.
@@ -57,37 +56,19 @@ public class TimeBlockController {
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<?> findById(@PathVariable Long id) {
-		try {
-			return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.findById(id)));
-		} catch (TimeBlockNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<TimeBlockResponseDTO> findById(@PathVariable Long id) {
+		return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.findById(id)));
 	}
 
 	@PutMapping("/{id}")
-	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody TimeBlockDTO dto) {
-		try {
-			return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.update(id, dto)));
-		} catch (IllegalArgumentException e) {
-			// A diferencia de CourtController.update: acá el service SÍ puede
-			// tirar IllegalArgumentException en el update (la validación
-			// end_time > start_time se re-chequea después del merge parcial),
-			// así que hace falta este catch que court-module no necesitaba.
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (TimeBlockNotFoundException | VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<TimeBlockResponseDTO> update(@PathVariable Long id, @RequestBody TimeBlockDTO dto) {
+		return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.update(id, dto)));
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<?> delete(@PathVariable Long id) {
-		try {
-			timeBlockService.delete(id);
-			return ResponseEntity.noContent().build();
-		} catch (TimeBlockNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<Void> delete(@PathVariable Long id) {
+		timeBlockService.delete(id);
+		return ResponseEntity.noContent().build();
 	}
 
 }

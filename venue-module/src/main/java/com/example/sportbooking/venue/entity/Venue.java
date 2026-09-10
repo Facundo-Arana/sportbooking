@@ -2,6 +2,7 @@ package com.example.sportbooking.venue.entity;
 
 import java.sql.Timestamp;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -28,6 +29,10 @@ public class Venue {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	// nullable=false: analogía con User.email/username (ver bitácora punto 7)
+	// — un venue sin nombre no tiene sentido de negocio, pero hasta ahora
+	// nada lo impedía a nivel de base.
+	@Column(nullable = false)
 	private String name;
 
 	private String address;

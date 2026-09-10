@@ -1,7 +1,6 @@
 package com.example.sportbooking.venue.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.venue.dto.VenueDTO;
 import com.example.sportbooking.venue.dto.VenueResponseDTO;
-import com.example.sportbooking.venue.exception.VenueNotFoundException;
 import com.example.sportbooking.venue.mapper.VenueMapper;
 import com.example.sportbooking.venue.service.VenueService;
 
@@ -26,6 +24,12 @@ import com.example.sportbooking.venue.service.VenueService;
 // "Authorization: Bearer <token>" automáticamente (usá /auth/login para
 // conseguir uno). Cuando llegue el momento de roles por venue
 // (user_venue_role), acá es donde se va a agregar @PreAuthorize.
+//
+// Ya no hay try/catch acá: VenueNotFoundException/IllegalArgumentException
+// se propagan solas y las traduce a HTTP el GlobalExceptionHandler
+// (app-module). Como bonus, el tipo de retorno deja de ser ResponseEntity<?>
+// -- ahora el compilador sabe exactamente qué devuelve cada método en el
+// camino feliz (ver bitácora punto 20).
 @RestController
 @RequestMapping("/venues")
 public class VenueController {
@@ -39,13 +43,9 @@ public class VenueController {
 	}
 
 	@PostMapping
-	public ResponseEntity<?> create(@RequestBody VenueDTO dto) {
-		try {
-			VenueResponseDTO created = venueMapper.toResponseDTO(venueService.create(dto));
-			return ResponseEntity.status(HttpStatus.CREATED).body(created);
-		} catch (IllegalArgumentException e) {
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<VenueResponseDTO> create(@RequestBody VenueDTO dto) {
+		VenueResponseDTO created = venueMapper.toResponseDTO(venueService.create(dto));
+		return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
 	@GetMapping
@@ -61,31 +61,19 @@ public class VenueController {
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<?> findById(@PathVariable Long id) {
-		try {
-			return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.findById(id)));
-		} catch (VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<VenueResponseDTO> findById(@PathVariable Long id) {
+		return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.findById(id)));
 	}
 
 	@PutMapping("/{id}")
-	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody VenueDTO dto) {
-		try {
-			return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.update(id, dto)));
-		} catch (VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<VenueResponseDTO> update(@PathVariable Long id, @RequestBody VenueDTO dto) {
+		return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.update(id, dto)));
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<?> delete(@PathVariable Long id) {
-		try {
-			venueService.delete(id);
-			return ResponseEntity.noContent().build();
-		} catch (VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<Void> delete(@PathVariable Long id) {
+		venueService.delete(id);
+		return ResponseEntity.noContent().build();
 	}
 
 }

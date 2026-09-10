@@ -1,7 +1,6 @@
 package com.example.sportbooking.court.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,16 +16,18 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.court.dto.CourtDTO;
 import com.example.sportbooking.court.dto.CourtResponseDTO;
-import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.court.mapper.CourtMapper;
 import com.example.sportbooking.court.service.CourtService;
-import com.example.sportbooking.venue.exception.VenueNotFoundException;
 
 // Mismo criterio que VenueController: sin reglas nuevas de seguridad. La
 // SecurityConfiguration del auth-module ya tiene ".anyRequest().authenticated()"
 // como regla por defecto, así que "/courts/**" queda protegido automáticamente.
 // Cuando exista user_venue_role, acá es donde se va a agregar @PreAuthorize
 // para validar que el usuario tenga rol sobre el venue de la cancha.
+//
+// Sin try/catch: CourtNotFoundException/VenueNotFoundException/
+// IllegalArgumentException las traduce el GlobalExceptionHandler
+// (app-module) -- ver bitácora punto 20.
 @RestController
 @RequestMapping("/courts")
 public class CourtController {
@@ -40,15 +41,9 @@ public class CourtController {
 	}
 
 	@PostMapping
-	public ResponseEntity<?> create(@RequestBody CourtDTO dto) {
-		try {
-			CourtResponseDTO created = courtMapper.toResponseDTO(courtService.create(dto));
-			return ResponseEntity.status(HttpStatus.CREATED).body(created);
-		} catch (IllegalArgumentException e) {
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<CourtResponseDTO> create(@RequestBody CourtDTO dto) {
+		CourtResponseDTO created = courtMapper.toResponseDTO(courtService.create(dto));
+		return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
 	// ?venueId=X es opcional: sin el param devuelve todas las canchas, con el
@@ -59,31 +54,19 @@ public class CourtController {
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<?> findById(@PathVariable Long id) {
-		try {
-			return ResponseEntity.ok(courtMapper.toResponseDTO(courtService.findById(id)));
-		} catch (CourtNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<CourtResponseDTO> findById(@PathVariable Long id) {
+		return ResponseEntity.ok(courtMapper.toResponseDTO(courtService.findById(id)));
 	}
 
 	@PutMapping("/{id}")
-	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody CourtDTO dto) {
-		try {
-			return ResponseEntity.ok(courtMapper.toResponseDTO(courtService.update(id, dto)));
-		} catch (CourtNotFoundException | VenueNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<CourtResponseDTO> update(@PathVariable Long id, @RequestBody CourtDTO dto) {
+		return ResponseEntity.ok(courtMapper.toResponseDTO(courtService.update(id, dto)));
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<?> delete(@PathVariable Long id) {
-		try {
-			courtService.delete(id);
-			return ResponseEntity.noContent().build();
-		} catch (CourtNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<Void> delete(@PathVariable Long id) {
+		courtService.delete(id);
+		return ResponseEntity.noContent().build();
 	}
 
 }

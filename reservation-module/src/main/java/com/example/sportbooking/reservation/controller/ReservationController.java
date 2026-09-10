@@ -2,7 +2,6 @@ package com.example.sportbooking.reservation.controller;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,18 +15,22 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.reservation.dto.ReservationDTO;
 import com.example.sportbooking.reservation.dto.ReservationResponseDTO;
-import com.example.sportbooking.reservation.exception.ReservationNotFoundException;
 import com.example.sportbooking.reservation.mapper.ReservationMapper;
 import com.example.sportbooking.reservation.service.ReservationService;
-import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
-import com.example.sportbooking.user.exception.UserNotFoundException;
 
 // Mismo criterio que los controllers anteriores: sin reglas nuevas de
 // seguridad, "/reservations/**" queda protegido por
 // ".anyRequest().authenticated()" en SecurityConfiguration.
+//
+// Sin try/catch: CourtNotFoundException/TimeBlockNotFoundException/
+// UserNotFoundException/ReservationNotFoundException (-> 404),
+// IllegalArgumentException (-> 400) e IllegalStateException (-> 409, turno
+// ya reservado) las traduce el GlobalExceptionHandler (app-module) -- ver
+// bitácora punto 20. Este controller era el que más lógica de traducción
+// repetía (era el único con el caso 409), así que es donde más se nota la
+// reducción.
 @RestController
 @RequestMapping("/reservations")
 public class ReservationController {
@@ -41,23 +44,9 @@ public class ReservationController {
 	}
 
 	@PostMapping
-	public ResponseEntity<?> create(@RequestBody ReservationDTO dto) {
-		try {
-			ReservationResponseDTO created = reservationMapper.toResponseDTO(reservationService.create(dto));
-			return ResponseEntity.status(HttpStatus.CREATED).body(created);
-		} catch (IllegalArgumentException e) {
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (CourtNotFoundException | TimeBlockNotFoundException | UserNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		} catch (IllegalStateException e) {
-			// Primer uso de 409 CONFLICT en el proyecto: a diferencia de 400
-			// (dato de entrada inválido) y 404 (recurso inexistente), acá el
-			// request en sí es válido pero choca contra el estado actual del
-			// sistema (ya hay otra reserva activa para ese turno). Es la
-			// misma distinción conceptual que 400 vs 401 en el punto 3.1 de
-			// la bitácora, aplicada a un código nuevo.
-			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<ReservationResponseDTO> create(@RequestBody ReservationDTO dto) {
+		ReservationResponseDTO created = reservationMapper.toResponseDTO(reservationService.create(dto));
+		return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
 	// ?courtId=X y/o ?date=YYYY-MM-DD, ambos opcionales y combinables (ver
@@ -73,36 +62,19 @@ public class ReservationController {
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<?> findById(@PathVariable Long id) {
-		try {
-			return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.findById(id)));
-		} catch (ReservationNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<ReservationResponseDTO> findById(@PathVariable Long id) {
+		return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.findById(id)));
 	}
 
 	@PutMapping("/{id}")
-	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody ReservationDTO dto) {
-		try {
-			return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.update(id, dto)));
-		} catch (IllegalArgumentException e) {
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (ReservationNotFoundException | CourtNotFoundException | TimeBlockNotFoundException
-				| UserNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		} catch (IllegalStateException e) {
-			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<ReservationResponseDTO> update(@PathVariable Long id, @RequestBody ReservationDTO dto) {
+		return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.update(id, dto)));
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<?> delete(@PathVariable Long id) {
-		try {
-			reservationService.delete(id);
-			return ResponseEntity.noContent().build();
-		} catch (ReservationNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<Void> delete(@PathVariable Long id) {
+		reservationService.delete(id);
+		return ResponseEntity.noContent().build();
 	}
 
 }

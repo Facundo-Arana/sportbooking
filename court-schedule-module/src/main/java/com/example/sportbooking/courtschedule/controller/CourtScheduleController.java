@@ -1,7 +1,6 @@
 package com.example.sportbooking.courtschedule.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,17 +14,18 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.courtschedule.dto.CourtScheduleDTO;
 import com.example.sportbooking.courtschedule.dto.CourtScheduleResponseDTO;
-import com.example.sportbooking.courtschedule.exception.CourtScheduleNotFoundException;
 import com.example.sportbooking.courtschedule.mapper.CourtScheduleMapper;
 import com.example.sportbooking.courtschedule.service.CourtScheduleService;
-import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
 
 // Mismo criterio que los controllers anteriores: sin reglas nuevas de
 // seguridad, "/court-schedules/**" queda protegido por
 // ".anyRequest().authenticated()" en SecurityConfiguration.
+//
+// Sin try/catch: CourtScheduleNotFoundException/CourtNotFoundException/
+// TimeBlockNotFoundException/IllegalArgumentException las traduce el
+// GlobalExceptionHandler (app-module) -- ver bitácora punto 20.
 @RestController
 @RequestMapping("/court-schedules")
 public class CourtScheduleController {
@@ -40,15 +40,9 @@ public class CourtScheduleController {
 	}
 
 	@PostMapping
-	public ResponseEntity<?> create(@RequestBody CourtScheduleDTO dto) {
-		try {
-			CourtScheduleResponseDTO created = courtScheduleMapper.toResponseDTO(courtScheduleService.create(dto));
-			return ResponseEntity.status(HttpStatus.CREATED).body(created);
-		} catch (IllegalArgumentException e) {
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (CourtNotFoundException | TimeBlockNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<CourtScheduleResponseDTO> create(@RequestBody CourtScheduleDTO dto) {
+		CourtScheduleResponseDTO created = courtScheduleMapper.toResponseDTO(courtScheduleService.create(dto));
+		return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
 	// ?courtId=X opcional, mismo criterio que CourtController/TimeBlockController.
@@ -59,37 +53,19 @@ public class CourtScheduleController {
 	}
 
 	@GetMapping("/{id}")
-	public ResponseEntity<?> findById(@PathVariable Long id) {
-		try {
-			return ResponseEntity.ok(courtScheduleMapper.toResponseDTO(courtScheduleService.findById(id)));
-		} catch (CourtScheduleNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<CourtScheduleResponseDTO> findById(@PathVariable Long id) {
+		return ResponseEntity.ok(courtScheduleMapper.toResponseDTO(courtScheduleService.findById(id)));
 	}
 
 	@PutMapping("/{id}")
-	public ResponseEntity<?> update(@PathVariable Long id, @RequestBody CourtScheduleDTO dto) {
-		try {
-			return ResponseEntity.ok(courtScheduleMapper.toResponseDTO(courtScheduleService.update(id, dto)));
-		} catch (IllegalArgumentException e) {
-			// Igual motivo que TimeBlockController.update: el service puede
-			// tirar IllegalArgumentException en el update (day_of_week fuera
-			// de rango, o la re-validación de "mismo venue" tras el merge
-			// parcial).
-			return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-		} catch (CourtScheduleNotFoundException | CourtNotFoundException | TimeBlockNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<CourtScheduleResponseDTO> update(@PathVariable Long id, @RequestBody CourtScheduleDTO dto) {
+		return ResponseEntity.ok(courtScheduleMapper.toResponseDTO(courtScheduleService.update(id, dto)));
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<?> delete(@PathVariable Long id) {
-		try {
-			courtScheduleService.delete(id);
-			return ResponseEntity.noContent().build();
-		} catch (CourtScheduleNotFoundException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-		}
+	public ResponseEntity<Void> delete(@PathVariable Long id) {
+		courtScheduleService.delete(id);
+		return ResponseEntity.noContent().build();
 	}
 
 }
