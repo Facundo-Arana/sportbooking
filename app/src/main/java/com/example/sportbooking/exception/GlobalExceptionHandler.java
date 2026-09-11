@@ -13,7 +13,9 @@ import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.courtschedule.exception.CourtScheduleNotFoundException;
 import com.example.sportbooking.reservation.exception.ReservationNotFoundException;
 import com.example.sportbooking.timeblock.exception.TimeBlockNotFoundException;
+import com.example.sportbooking.user.exception.RoleNotFoundException;
 import com.example.sportbooking.user.exception.UserNotFoundException;
+import com.example.sportbooking.uservenuerole.exception.UserVenueRoleNotFoundException;
 import com.example.sportbooking.venue.exception.VenueNotFoundException;
 
 // Vive en app-module (y no en un módulo "común") porque es el único módulo
@@ -32,12 +34,13 @@ public class GlobalExceptionHandler {
 
 	// 404: recurso inexistente. Antes cada controller (Venue/Court/TimeBlock/
 	// CourtSchedule/Reservation) tenía su propio catch para esto, repetido
-	// módulo por módulo. Las seis excepciones no comparten una clase base
+	// módulo por módulo. Estas ocho excepciones no comparten una clase base
 	// (cada módulo define la suya, RuntimeException a secas) a propósito: no
 	// se creó una ResourceNotFoundException común porque eso exigiría un
 	// módulo compartido nuevo solo para una clase -- ver nota de arriba.
 	@ExceptionHandler({ VenueNotFoundException.class, CourtNotFoundException.class, TimeBlockNotFoundException.class,
-			CourtScheduleNotFoundException.class, ReservationNotFoundException.class, UserNotFoundException.class })
+			CourtScheduleNotFoundException.class, ReservationNotFoundException.class, UserNotFoundException.class,
+			RoleNotFoundException.class, UserVenueRoleNotFoundException.class })
 	public ResponseEntity<Map<String, String>> handleNotFound(RuntimeException e) {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 	}

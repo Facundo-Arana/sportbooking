@@ -46,6 +46,11 @@
         </dependency>
         <dependency>
             <groupId>com.example.sportbooking</groupId>
+            <artifactId>user-venue-role-module</artifactId>
+             <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.example.sportbooking</groupId>
             <artifactId>reservation-module</artifactId>
              <version>0.0.1-SNAPSHOT</version>
         </dependency>

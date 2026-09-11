@@ -348,6 +348,22 @@
 
 ---
 
+## 21. 🟡 Módulo `user_venue_role` nuevo (pendiente de la sección 7)
+
+- **Qué era el pendiente**: la tabla `user_venue_role` ya existía en `sportbooking.sql` desde el dump original, pero no tenía entity/repo/service/controller en Java — era el único dominio del modelo de datos sin capa de aplicación.
+- **Alcance de este módulo**: asignar un rol a un usuario dentro de un venue (`POST /user-venue-roles` con `venue_id`/`user_id`/`role_id`), listarlas con filtros opcionales (`?venueId=X`, `?userId=X`, combinables), verlas por id, y revocarlas (`DELETE`). **No hay `PUT`**: conceptualmente una asignación de rol no se "edita" — cambiar el trío usuario/venue/rol es otra asignación distinta, no una actualización parcial de la misma. El flujo correcto para cambiar un rol es `DELETE` + `POST`.
+- **Lo que faltaba en `user-module` y se agregó ahora**: `Role` ya existía como entity (la usa `UserGlobalRole`) pero sin `RoleRepository`, sin `RoleNotFoundException`, sin `RoleResponseDTO`/`RoleMapper` — nada la resolvía por id todavía. Se agregaron los cuatro, mismo patrón que `User`/`Venue`.
+- **Módulo nuevo**: `user-venue-role-module`, depende de `user-module` (`User` y `Role` viven ahí) y `venue-module`. Entity `UserVenueRole` con **tres** `@ManyToOne` (venue, user, role) — mismo caso que `Reservation` (tres relaciones hacia módulos externos), pero acá sin ningún campo propio más allá de las FKs: es una tabla de asignación pura.
+- **Detalle del esquema real que quedó documentado en la entity**: en `sportbooking.sql`, `fk_venue_id` tiene `CONSTRAINT ... FOREIGN KEY`, pero `fk_user_id` y `fk_role_id` **no** tienen FK real a nivel de base (mismo caso ya señalado en `Reservation.reservedByUser`/`reservedForUser`, pendiente general del punto 7). El `UNIQUE (fk_venue_id, fk_user_id, fk_role_id)` sí existe en la base (`user_venue_role_unique`) y se declaró también en la entity vía `@Table(uniqueConstraints = ...)`.
+- **Defensa en profundidad, igual patrón que el punto 19/20**: `UserVenueRoleService.create()` valida duplicado contra el repositorio (`existsByVenue_IdAndUser_IdAndRole_Id`) → 400 con mensaje claro; si dos altas del mismo trío llegan en simultáneo, el `UNIQUE` real de la base corta la carrera y el `GlobalExceptionHandler` ya construido en el punto 20 lo traduce a 409 (`DataIntegrityViolationException`) sin código nuevo — primera vez que ese handler se ejercita con un caso real, no solo hipotético.
+- **Lo que este módulo NO hace todavía (a propósito)**: no conecta nada con Spring Security. `VenueController`/`CourtController`/etc. tienen comentarios desde hace varios puntos de la bitácora que dicen "acá va `@PreAuthorize` cuando exista `user_venue_role`" — ese cableado (leer el rol del usuario autenticado sobre el venue del recurso y autorizar en base a eso) es el próximo pendiente real, no este módulo. Este módulo es el prerrequisito de datos, no la autorización en sí.
+- **Archivos nuevos**: `user-venue-role-module/` completo (pom.xml + entity/dto/exception/mapper/repository/service/controller), `RoleRepository.java`, `RoleNotFoundException.java`, `RoleResponseDTO.java`, `RoleMapper.java` (los 4 últimos en `user-module`).
+- **Archivos modificados**: `pom.xml` (raíz, nuevo `<module>`), `app/pom.xml` (nueva dependencia), `GlobalExceptionHandler.java` (suma `RoleNotFoundException`/`UserVenueRoleNotFoundException` al grupo de 404).
+- **Verificado**: confirmado — compila y `POST /user-venue-roles` asigna roles a usuarios en su venue correctamente.
+- **Concepto para profundizar**: por qué esta tabla no tiene un `update()` mientras que todas las anteriores sí — la diferencia entre un *recurso* (tiene atributos propios que tiene sentido corregir con un PUT parcial) y una *tabla de asociación pura* (la identidad de la fila ES la combinación de sus FKs, así que "editarla" es indistinguible de borrar una y crear otra). Buen ejemplo para hablar de modelado de dominio más allá de CRUD mecánico en la entrevista.
+
+---
+
 ## Convención de entrega (zips)
 
 A partir de esta entrada: cada zip generado en el chat contiene **únicamente los archivos nuevos o modificados** en esa sesión, con su ruta completa desde la raíz del proyecto (para poder copiarlos directo sobre el proyecto local sin pisar nada más). La bitácora es la fuente de verdad de *qué* cambió — cada entrada de esta bitácora que corresponda a un cambio de código debe listar explícitamente los **archivos modificados** (como en el punto 14), así el contenido del zip de esa sesión y lo documentado acá coinciden 1 a 1.

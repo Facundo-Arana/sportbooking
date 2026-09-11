@@ -171,6 +171,7 @@
 		<module>court-module</module>
 		<module>time-block-module</module>
 		<module>court-schedule-module</module>
+		<module>user-venue-role-module</module>
 		<module>reservation-module</module>
 		<module>app</module>
 	</modules>
