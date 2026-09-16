@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,12 +19,18 @@ import com.example.sportbooking.uservenuerole.dto.UserVenueRoleResponseDTO;
 import com.example.sportbooking.uservenuerole.mapper.UserVenueRoleMapper;
 import com.example.sportbooking.uservenuerole.service.UserVenueRoleService;
 
-// Igual que el resto: sin reglas nuevas de seguridad todavía, "/user-venue-roles/**"
-// queda protegido por ".anyRequest().authenticated()" en SecurityConfiguration.
-// Este módulo es justamente el que hace FALTA para poder empezar a agregar
-// @PreAuthorize real en los demás controllers (Venue/Court/TimeBlock/...),
-// pero ese paso de conectar user_venue_role con Spring Security todavía no
-// se hizo -- queda anotado como próximo pendiente en la bitácora (punto 21).
+// Autorización por rol -- último eslabón del punto 21: quién puede asignar
+// o revocar un rol EN UN VENUE es la misma pregunta que "quién puede
+// manejar ese venue" (create() usa #dto.venue_id; delete() resuelve el
+// venue de la fila existente vía canManageUserVenueRole(#id)). Es
+// deliberadamente circular en el buen sentido: un OWNER de un venue puede
+// asignar roles a otros usuarios en su propio venue, no solo un ADMIN
+// global -- así un dueño de sede puede sumar personal sin depender del
+// administrador de la plataforma para cada alta.
+// findAll()/findById() quedan sin cambios (abiertos a cualquier
+// autenticado), mismo criterio que el resto de los endpoints de lectura --
+// si más adelante hace falta ocultar quién tiene qué rol, es un cambio
+// puntual acá.
 //
 // Sin PUT: ver justificación en UserVenueRoleService (no tiene update()).
 // Sin try/catch: VenueNotFoundException/UserNotFoundException/
@@ -43,6 +50,7 @@ public class UserVenueRoleController {
 		this.userVenueRoleMapper = userVenueRoleMapper;
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageVenue(#dto.venue_id)")
 	@PostMapping
 	public ResponseEntity<UserVenueRoleResponseDTO> create(@RequestBody UserVenueRoleDTO dto) {
 		UserVenueRoleResponseDTO created = userVenueRoleMapper.toResponseDTO(userVenueRoleService.create(dto));
@@ -63,6 +71,7 @@ public class UserVenueRoleController {
 		return ResponseEntity.ok(userVenueRoleMapper.toResponseDTO(userVenueRoleService.findById(id)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageUserVenueRole(#id)")
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable Long id) {
 		userVenueRoleService.delete(id);

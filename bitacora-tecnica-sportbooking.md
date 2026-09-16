@@ -364,6 +364,49 @@
 
 ---
 
+## 22. 🟡 `venue_id` no se revalida contra el destino en `PUT` — permite transferir recursos entre venues sin autorización
+
+- **Estado**: 🟡 Pendiente (detectado en revisión, no en Postman — decisión de posponer el fix explícitamente tomada para dejarlo como primer punto del próximo chat).
+- **Contexto**: apareció al revisar (antes de testear `reservation-module` con el usuario "venue admin") si `Court.venue_id` debería poder cambiarse vía `PUT /courts/{id}`.
+- **Síntoma potencial**: `CourtService.update()` permite pisar `venue_id` en un update parcial. Lo mismo pasa en `TimeBlockService.update()`.
+- **Causa raíz — dos capas**:
+  1. **Negocio**: conceptualmente no debería ser transferible una cancha (o una franja horaria) de una sede a otra — mismo criterio ya aplicado a `reservation.reserved_by_user_id` (punto 13): es un dato identitario/histórico, no algo que se "edita".
+  2. **Seguridad (la más importante)**: el `@PreAuthorize("... or @venueAuthorization.canManageCourt(#id)")` agregado en este chat evalúa el venue **actual** del recurso, *antes* de correr el método — nunca vuelve a chequear el `venue_id` nuevo que viene en el body. Un usuario con rol solo en el venue A podría, en teoría, hacer `PUT` sobre una cancha suya de A y reasignarla a un venue B donde no tiene ningún rol, sin que el chequeo lo detecte.
+- **Por qué no se disparó testeando**: la vulnerabilidad es de diseño, no de un flujo que se haya ejercitado en Postman todavía — se encontró por inspección de código, revisando `CourtService.update()` antes de seguir con el checklist de `reservation`.
+- **Fix propuesto (pendiente de aplicar)**:
+  - `Court`/`TimeBlock`: sacar `venue_id` del `update()` (queda inmutable, igual criterio que `reservation.reserved_by_user_id`). Si hace falta reubicar una cancha, se borra y se crea de nuevo.
+  - `CourtSchedule`/`Reservation`: **no** se puede aplicar el mismo criterio, porque ahí sí hay un caso de negocio real para reprogramar `court_id`/`time_block_id` (documentado en el punto 13). El fix correcto ahí es re-chequear `canManageVenue()` contra el venue **resultante** después de aplicar el cambio parcial — mismo patrón que ya usa `validateSameVenue()` en ambos services (revalidar sobre el estado final, no sobre el payload).
+- **Concepto para profundizar** ⭐: por qué un `@PreAuthorize` evaluado sobre el estado *previo* de un recurso no alcanza cuando el propio `PUT` puede cambiar la dimensión (acá, el venue) contra la que se autoriza — mismo problema de fondo que las validaciones cruzadas post-update ya documentadas (puntos 10, 12, 17: "revalidar contra el estado final, no contra el payload parcial"), pero aplicado a autorización en vez de a integridad de datos. Buen ejemplo de que agregar seguridad a un endpoint existente puede exponer un supuesto implícito ("el venue de este recurso no cambia") que el código de negocio nunca necesitó cuestionar hasta ahora.
+
+---
+
+## 23. 🟢 Autorización por rol/venue: `@PreAuthorize` + `VenueAuthorization` (siguiente paso del punto 21)
+
+- **Estado**: 🟢 Resuelto y testeado end-to-end en Postman (`reservation-module` confirmado por el usuario, "anda bien en todos sus endpoints"; `court-module` confirmado contra un usuario sin rol global, ver más abajo). Pendiente conocido: ver punto 22.
+- **Objetivo**: conectar `user_venue_role` (punto 21) con Spring Security de verdad — hasta acá cualquier usuario autenticado podía gestionar cualquier venue/cancha/franja/horario/reserva, sin importar si tenía un rol asignado ahí.
+- **`VenueAuthorization`, bean nuevo, vive en `app-module`** (`com.example.sportbooking.security`), no en `user-venue-role-module`: mismo motivo que `GlobalExceptionHandler` (punto 20) — es el único módulo que ya depende de los 7 módulos de dominio + `auth-module`, así que es el único que puede resolver la pregunta sin crear una dependencia circular (`user-venue-role-module` depende de `venue-module`; si `venue-module` necesitara importar la clase de autorización, sería circular). Los controllers de cada módulo referencian el bean **por nombre** dentro del SpEL de `@PreAuthorize` (`@venueAuthorization.canManageX(...)`), no por import de clase — Spring lo resuelve en runtime contra el `ApplicationContext`, así que ningún módulo de dominio necesita depender de `app-module` para usarlo.
+- **Regla base, deliberadamente simple**: `canManageVenue(venueId)` = el usuario autenticado tiene **al menos una** fila en `user_venue_role` para ese venue, sin distinguir todavía por nombre de rol (`OWNER` vs. `STAFF`, etc.) — mismo criterio de "no abstraer hasta la 3ra necesidad real" que ya aparece en el punto 17. Los demás métodos (`canManageCourt`, `canManageTimeBlock`, `canManageCourtSchedule`, `canManageUserVenueRole`) resuelven el venue del recurso (directo o navegando `court→venue`) y delegan en `canManageVenue`.
+- **`canManageReservation`, caso distinto**: no delega solo en el venue — un usuario puede manejar (editar/cancelar) una reserva si **la creó** (`reservedByUser`, sin necesitar rol en el venue) **o** tiene rol en el venue de la cancha reservada (personal de la sede). Ninguna de las dos implica ser ADMIN global; ese bypass se agrega aparte en cada `@PreAuthorize` (`hasRole('ADMIN') or @venueAuthorization.canManageX(...)`), no adentro del método, para no mezclar "rol global" con "relación con el recurso puntual".
+- **`@EnableMethodSecurity` en `SecurityConfiguration`**: sin esto, `@PreAuthorize` en los controllers es una anotación que Spring ignora en silencio (no da error, tampoco protege nada) — fácil de no notar en desarrollo.
+- **Criterio distinto por tipo de endpoint**:
+  - `findAll()`/`findById()` de todos los recursos: sin cambios, siguen abiertos a cualquier autenticado (catálogo/agenda, no gestión).
+  - `create()`/`update()`/`delete()` de `Venue`/`Court`/`TimeBlock`/`CourtSchedule`/`UserVenueRole`: `hasRole('ADMIN') or @venueAuthorization.canManageX(...)`. `Venue.create()` es un caso aparte — no hay venue todavía contra el cual chequear rol, así que queda restringido a `hasRole('ADMIN')` solo (crear una sede es una acción de plataforma).
+  - `Reservation.create()`: **sin** `@PreAuthorize` nuevo — reservar sigue siendo la acción de cualquier cliente autenticado, no una acción de gestión. Solo `update()`/`delete()` quedan protegidos.
+- **Archivos nuevos**: `app/src/main/java/com/example/sportbooking/security/VenueAuthorization.java`.
+- **Archivos modificados**: `auth-module/.../config/SecurityConfiguration.java` (+`@EnableMethodSecurity`), `venue-module/.../controller/VenueController.java`, `court-module/.../controller/CourtController.java`, `time-block-module/.../controller/TimeBlockController.java`, `court-schedule-module/.../controller/CourtScheduleController.java`, `reservation-module/.../controller/ReservationController.java`, `user-venue-role-module/.../controller/UserVenueRoleController.java`.
+- **Prerrequisito no resuelto automáticamente**: no hay seed de datos — para probar esto hace falta al menos un usuario con rol global `ADMIN` creado a mano en `user_global_role` (el propio usuario documentó que así lo vino haciendo).
+- **Testeado**: `reservation-module` completo, todos los endpoints OK con el criterio de dueño/staff-de-venue/ADMIN. `court-module` verificado con un segundo usuario ("venue admin", sin rol global — `/auth/me` devuelve `authorities: []` a propósito, confirmando que no tiene bypass de ADMIN) para ejercitar la rama nueva de `canManageVenue()`, no solo el atajo de ADMIN.
+- **Pendiente relacionado, no bloqueante**: ver punto 22 — el `@PreAuthorize` de `update()` evalúa el venue *actual* del recurso antes de correr el método, no revalida contra un `venue_id` nuevo que venga en el body. Afecta a `Court`/`TimeBlock` (fix propuesto: inmutabilidad) y a `CourtSchedule`/`Reservation` (fix propuesto: re-chequeo post-update). Queda para el próximo chat.
+- **Concepto para profundizar** ⭐: la diferencia entre **autenticación** (quién sos, ya resuelta desde el punto 3.1) y **autorización granular por recurso** (qué podés hacer con ESTE recurso puntual, no solo si estás logueado) — y por qué esta segunda capa casi siempre necesita resolver una cadena de relaciones (`Court → Venue`, `Reservation → Court → Venue`) en vez de un chequeo plano de rol. También: cómo Spring Security resuelve un bean por nombre dentro de una expresión SpEL (`@beanName.metodo(...)`) sin necesitar un import de clase Java, y por qué eso permite desacoplar el código de autorización del módulo que lo usa.
+
+---
+
+**Pendientes para el próximo chat, en orden:**
+1. Punto 22 (inmutabilidad de `venue_id` en `Court`/`TimeBlock` + re-chequeo post-update en `CourtSchedule`/`Reservation`).
+2. Resto del backlog de la sección 7 sin tocar (credenciales hardcodeadas, testing automatizado, FKs reales faltantes en `reservation`/`user_venue_role`).
+
+---
+
 ## Convención de entrega (zips)
 
 A partir de esta entrada: cada zip generado en el chat contiene **únicamente los archivos nuevos o modificados** en esa sesión, con su ruta completa desde la raíz del proyecto (para poder copiarlos directo sobre el proyecto local sin pisar nada más). La bitácora es la fuente de verdad de *qué* cambió — cada entrada de esta bitácora que corresponda a un cambio de código debe listar explícitamente los **archivos modificados** (como en el punto 14), así el contenido del zip de esa sesión y lo documentado acá coinciden 1 a 1.

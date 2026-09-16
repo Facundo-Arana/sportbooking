@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,9 +20,10 @@ import com.example.sportbooking.timeblock.dto.TimeBlockResponseDTO;
 import com.example.sportbooking.timeblock.mapper.TimeBlockMapper;
 import com.example.sportbooking.timeblock.service.TimeBlockService;
 
-// Mismo criterio que VenueController/CourtController: sin reglas nuevas de
-// seguridad. ".anyRequest().authenticated()" en SecurityConfiguration ya
-// protege "/time-blocks/**" automáticamente.
+// Autorización por rol: mismo patrón que CourtController. create() usa
+// #dto.venue_id (la franja todavía no existe); update()/delete() resuelven
+// el venue de la TimeBlock existente vía
+// VenueAuthorization.canManageTimeBlock(#id). ADMIN global pasa siempre.
 //
 // Sin try/catch: TimeBlockNotFoundException/VenueNotFoundException/
 // IllegalArgumentException las traduce el GlobalExceptionHandler
@@ -42,6 +44,7 @@ public class TimeBlockController {
 		this.timeBlockMapper = timeBlockMapper;
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageVenue(#dto.venue_id)")
 	@PostMapping
 	public ResponseEntity<TimeBlockResponseDTO> create(@RequestBody TimeBlockDTO dto) {
 		TimeBlockResponseDTO created = timeBlockMapper.toResponseDTO(timeBlockService.create(dto));
@@ -60,11 +63,13 @@ public class TimeBlockController {
 		return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.findById(id)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageTimeBlock(#id)")
 	@PutMapping("/{id}")
 	public ResponseEntity<TimeBlockResponseDTO> update(@PathVariable Long id, @RequestBody TimeBlockDTO dto) {
 		return ResponseEntity.ok(timeBlockMapper.toResponseDTO(timeBlockService.update(id, dto)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageTimeBlock(#id)")
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable Long id) {
 		timeBlockService.delete(id);

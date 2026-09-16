@@ -6,6 +6,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -18,6 +19,13 @@ import com.example.sportbooking.auth.security.util.JwtFilter;
 
 @Configuration
 @EnableWebSecurity
+// prePostEnabled=true por defecto en Spring Security 6: habilita que
+// @PreAuthorize se evalúe en cualquier método de un bean de Spring (los
+// @RestController de cada módulo, en este caso), ANTES de que el método se
+// ejecute. Sin esta anotación, @PreAuthorize en los controllers es una
+// anotación muerta que Spring ignora silenciosamente -- no da error, pero
+// tampoco protege nada, así que es fácil no notar el olvido en desarrollo.
+@EnableMethodSecurity
 public class SecurityConfiguration {
 
 	@SuppressWarnings("unused")

@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,12 +19,20 @@ import com.example.sportbooking.venue.dto.VenueResponseDTO;
 import com.example.sportbooking.venue.mapper.VenueMapper;
 import com.example.sportbooking.venue.service.VenueService;
 
-// Nota: no hay ninguna regla nueva de seguridad para "/venues/**". La
-// SecurityConfiguration del auth-module ya tiene ".anyRequest().authenticated()"
-// como regla por defecto, así que estos endpoints van a requerir
-// "Authorization: Bearer <token>" automáticamente (usá /auth/login para
-// conseguir uno). Cuando llegue el momento de roles por venue
-// (user_venue_role), acá es donde se va a agregar @PreAuthorize.
+// Autorización por rol (ver bitácora, próximo paso tras punto 21):
+// - create(): crear una sede nueva es una acción de plataforma, no de un
+//   venue puntual que todavía no existe -- no hay "venue_id" contra el cual
+//   chequear user_venue_role. Se restringe a ADMIN global (ROLE_ADMIN, vía
+//   user_global_role) hasta que exista un flujo de negocio distinto.
+// - findAll()/findById(): sin cambios, siguen abiertos a cualquier usuario
+//   autenticado (".anyRequest().authenticated()" heredado) -- es catálogo
+//   público de sedes, no una acción de gestión.
+// - update()/delete(): ADMIN global, o alguien con un rol asignado en
+//   user_venue_role para ESE venue puntual (ver VenueAuthorization,
+//   app-module). "@venueAuthorization" se resuelve por nombre de bean en
+//   tiempo de ejecución -- venue-module no depende de app-module ni de
+//   user-venue-role-module, evita una dependencia circular (ver el
+//   comentario en VenueAuthorization.java).
 //
 // Ya no hay try/catch acá: VenueNotFoundException/IllegalArgumentException
 // se propagan solas y las traduce a HTTP el GlobalExceptionHandler
@@ -42,6 +51,7 @@ public class VenueController {
 		this.venueMapper = venueMapper;
 	}
 
+	@PreAuthorize("hasRole('ADMIN')")
 	@PostMapping
 	public ResponseEntity<VenueResponseDTO> create(@RequestBody VenueDTO dto) {
 		VenueResponseDTO created = venueMapper.toResponseDTO(venueService.create(dto));
@@ -65,11 +75,13 @@ public class VenueController {
 		return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.findById(id)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageVenue(#id)")
 	@PutMapping("/{id}")
 	public ResponseEntity<VenueResponseDTO> update(@PathVariable Long id, @RequestBody VenueDTO dto) {
 		return ResponseEntity.ok(venueMapper.toResponseDTO(venueService.update(id, dto)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageVenue(#id)")
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable Long id) {
 		venueService.delete(id);

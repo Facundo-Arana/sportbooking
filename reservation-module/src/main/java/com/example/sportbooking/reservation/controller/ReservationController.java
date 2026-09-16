@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,9 +21,18 @@ import com.example.sportbooking.reservation.dto.ReservationResponseDTO;
 import com.example.sportbooking.reservation.mapper.ReservationMapper;
 import com.example.sportbooking.reservation.service.ReservationService;
 
-// Mismo criterio que los controllers anteriores: sin reglas nuevas de
-// seguridad, "/reservations/**" queda protegido por
-// ".anyRequest().authenticated()" en SecurityConfiguration.
+// Autorización por rol, con un criterio DISTINTO al resto de los
+// controllers de gestión (Venue/Court/TimeBlock/CourtSchedule):
+// - create()/findAll()/findById(): sin @PreAuthorize nuevo, siguen abiertos
+//   a cualquier usuario autenticado. Reservar una cancha no es una acción
+//   de gestión del venue, es la acción central de un cliente cualquiera --
+//   exigir rol acá rompería el caso de uso principal de la app.
+// - update()/delete(): "puede manejar ESTA reserva puntual" == la creó
+//   (reservedByUser, para poder cancelar/modificar la propia) O tiene un
+//   rol asignado en el venue de la cancha reservada (personal de la sede,
+//   que gestiona la agenda completa) O es ADMIN global. Las primeras dos
+//   condiciones viven juntas en VenueAuthorization.canManageReservation()
+//   -- ver el comentario ahí sobre por qué no se separaron.
 //
 // Sin try/catch: CourtNotFoundException/TimeBlockNotFoundException/
 // UserNotFoundException/ReservationNotFoundException (-> 404),
@@ -66,11 +76,13 @@ public class ReservationController {
 		return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.findById(id)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageReservation(#id)")
 	@PutMapping("/{id}")
 	public ResponseEntity<ReservationResponseDTO> update(@PathVariable Long id, @RequestBody ReservationDTO dto) {
 		return ResponseEntity.ok(reservationMapper.toResponseDTO(reservationService.update(id, dto)));
 	}
 
+	@PreAuthorize("hasRole('ADMIN') or @venueAuthorization.canManageReservation(#id)")
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable Long id) {
 		reservationService.delete(id);
