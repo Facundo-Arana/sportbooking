@@ -44,7 +44,7 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 ## Base de datos
 
 - PostgreSQL local, schema `platform`. Config única en `app/src/main/resources/application.properties`: puerto 8081, `ddl-auto=update`, credenciales y `jwt.secret` hardcodeados (deuda conocida).
-- `ddl-auto=update` aplica `ALTER TABLE` al arrancar y **falla en silencio** si hay datos que violan un constraint nuevo. Scripts manuales en `db/*.sql` cuando hace falta.
+- `ddl-auto=update` aplica `ALTER TABLE` al arrancar y **falla en silencio** si hay datos que violan un constraint nuevo. No hay Flyway/Liquibase ni scripts SQL versionados (la carpeta `db/` no existe en el repo).
 - Varias FK del dump original no existen a nivel de base (ej. `fk_reserved_by_user_id`; `fk_user_id`/`fk_role_id` en `user_venue_role`) aunque se mapeen con `@ManyToOne`.
 - No hay seed de datos: probar la autorización requiere un `ADMIN` en `user_global_role` creado a mano.
 
