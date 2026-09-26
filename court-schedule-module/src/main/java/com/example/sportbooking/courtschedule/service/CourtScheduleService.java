@@ -70,6 +70,10 @@ public class CourtScheduleService {
 	public CourtSchedule update(Long id, CourtScheduleDTO dto) {
 		CourtSchedule courtSchedule = findById(id); // ya tira CourtScheduleNotFoundException si no existe
 
+		// Venue de ORIGEN, capturado antes de aplicar el merge parcial (ver
+		// validateVenueUnchanged mas abajo y bitacora, punto 22).
+		Long originalVenueId = courtSchedule.getCourt().getVenue().getId();
+
 		// Update parcial, mismo criterio que los services anteriores: solo
 		// se pisan los campos que vinieron en el body.
 		if (dto.getCourt_id() != null) {
@@ -97,6 +101,7 @@ public class CourtScheduleService {
 		// que TimeBlockService.validateTimeRange en el update): si el PUT
 		// solo trae court_id, la franja horaria que ya tenía guardada puede
 		// quedar apuntando a un venue distinto, y viceversa.
+		validateVenueUnchanged(originalVenueId, courtSchedule.getCourt());
 		validateSameVenue(courtSchedule.getCourt(), courtSchedule.getTimeBlock());
 
 		return courtScheduleRepository.save(courtSchedule);
@@ -122,6 +127,21 @@ public class CourtScheduleService {
 		if (!courtVenueId.equals(timeBlockVenueId)) {
 			throw new IllegalArgumentException(
 					"La cancha y la franja horaria deben pertenecer al mismo venue");
+		}
+	}
+
+	// Punto 22 de la bitacora: el @PreAuthorize de update() autoriza contra
+	// el venue ORIGEN del horario (canManageCourtSchedule(#id)), nunca contra
+	// el destino. validateSameVenue() no alcanza: si el PUT trae court_id Y
+	// time_block_id de otro venue, ambos son consistentes ENTRE SI y pasa,
+	// pero el horario "se mudo" a un venue donde el usuario no tiene rol.
+	// Se permite reprogramar dentro del mismo venue (otra cancha, otra
+	// franja); mover entre venues = eliminar y crear de nuevo (donde el
+	// @PreAuthorize de create() si chequea el venue destino).
+	private void validateVenueUnchanged(Long originalVenueId, Court finalCourt) {
+		if (!originalVenueId.equals(finalCourt.getVenue().getId())) {
+			throw new IllegalArgumentException(
+					"Un horario no se puede mover a una cancha de otro venue; eliminalo y crea uno nuevo en el venue destino");
 		}
 	}
 

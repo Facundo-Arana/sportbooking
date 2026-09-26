@@ -62,13 +62,24 @@ public class CourtService {
 	public Court update(Long id, CourtDTO dto) {
 		Court court = findById(id); // ya tira CourtNotFoundException si no existe
 
+		// venue_id es INMUTABLE despues del alta (bitacora, punto 22). Dos
+		// razones: (1) seguridad -- el @PreAuthorize del controller evalua el
+		// venue ACTUAL de la cancha antes de correr este metodo, asi que si
+		// el PUT pudiera cambiar el venue, un usuario con rol solo en la
+		// sede A podria mover su cancha a la sede B; (2) integridad -- los
+		// court_schedule y reservation ya creados para esta cancha apuntan a
+		// time_blocks del venue original, mover la cancha los dejaria
+		// inconsistentes (violando validateSameVenue). Si el body reenvia el
+		// MISMO venue_id (el front puede mandar el formulario completo) es
+		// un no-op; si trae uno distinto, se rechaza con 400.
+		Long currentVenueId = court.getVenue() != null ? court.getVenue().getId() : null;
+		if (dto.getVenue_id() != null && !dto.getVenue_id().equals(currentVenueId)) {
+			throw new IllegalArgumentException(
+					"El venue_id de una cancha no se puede modificar; eliminala y crea una nueva en el venue destino");
+		}
+
 		// Update parcial, igual criterio que VenueService: solo se pisan los
 		// campos que vinieron en el body.
-		if (dto.getVenue_id() != null) {
-			Venue venue = venueRepository.findById(dto.getVenue_id())
-					.orElseThrow(() -> new VenueNotFoundException(dto.getVenue_id()));
-			court.setVenue(venue);
-		}
 		if (dto.getName() != null) {
 			court.setName(dto.getName());
 		}

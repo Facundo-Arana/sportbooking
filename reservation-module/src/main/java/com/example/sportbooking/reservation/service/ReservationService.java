@@ -113,6 +113,10 @@ public class ReservationService {
 	public Reservation update(Long id, ReservationDTO dto) {
 		Reservation reservation = findById(id); // ya tira ReservationNotFoundException si no existe
 
+		// Venue de ORIGEN, capturado antes de aplicar el merge parcial (ver
+		// validateVenueUnchanged mas abajo y bitacora, punto 22).
+		Long originalVenueId = reservation.getCourt().getVenue().getId();
+
 		// reserved_by_user_id NO se actualiza a propósito: identifica quién
 		// originó la reserva, es un dato histórico que no debería cambiar
 		// después del alta (a diferencia de court_id/time_block_id, que sí
@@ -151,6 +155,7 @@ public class ReservationService {
 		// que en CourtScheduleService.update()): si el PUT trae solo
 		// court_id, el timeBlock heredado del estado previo puede quedar
 		// apuntando a otro venue, y viceversa.
+		validateVenueUnchanged(originalVenueId, reservation.getCourt());
 		validateSameVenue(reservation.getCourt(), reservation.getTimeBlock());
 
 		// Re-validamos contra el estado FINAL de la entity, mismo criterio
@@ -244,6 +249,22 @@ public class ReservationService {
 		Long timeBlockVenueId = timeBlock.getVenue().getId();
 		if (!courtVenueId.equals(timeBlockVenueId)) {
 			throw new IllegalArgumentException("La cancha y la franja horaria deben pertenecer al mismo venue");
+		}
+	}
+
+	// Punto 22 de la bitacora. Aca NO alcanza con "re-chequear
+	// canManageVenue() sobre el venue resultante" (fix propuesto
+	// originalmente): quien maneja una reserva puede ser su DUENO (un
+	// cliente sin ningun rol en el venue, ver canManageReservation), y ese
+	// chequeo lo dejaria afuera incluso al reprogramar dentro de su propio
+	// venue. En cambio, se fija el venue de la reserva desde el alta:
+	// reprogramar cancha/franja dentro del mismo venue si, mover la reserva
+	// a otro venue = cancelarla y crear una nueva (el create() ya es
+	// accion abierta al cliente).
+	private void validateVenueUnchanged(Long originalVenueId, Court finalCourt) {
+		if (!originalVenueId.equals(finalCourt.getVenue().getId())) {
+			throw new IllegalArgumentException(
+					"Una reserva no se puede mover a una cancha de otro venue; cancelala y crea una nueva");
 		}
 	}
 

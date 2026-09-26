@@ -175,9 +175,10 @@
 
 ---
 
-## 11. Nota de proceso: entrega de archivos en el chat
+## 11. Nota de proceso: forma de trabajo (actualizada en el punto 25)
 
-- A partir de esta sesión, ante cambios de código el asistente entrega **solo los archivos nuevos o modificados**, respetando la estructura real de carpetas dentro de `sportbooking/` (la carpeta raíz que contiene el `pom.xml` padre) — no el proyecto completo comprimido. Acordado para minimizar tokens dado el plan gratuito.
+- **Convención vigente** ⚠️: el asistente **modifica directamente los archivos del proyecto** en el workspace (los crea/edita con sus herramientas), y el usuario testea después en su entorno local (`mvn compile` + Postman). Ver el **punto 25** para el cambio de la convención anterior de entrega de archivos/zip, que queda derogada.
+- Se mantiene: la bitácora sigue siendo la fuente de verdad y cada entrada con cambio de código lista los **archivos modificados** con ruta completa — ya no como mecanismo de entrega, sino como registro de qué se tocó.
 
 ### Próximo paso sugerido (cumplido, ver punto 12)
 `court_schedule` (depende de `court` + `time_block`, ambos ya resueltos) es el siguiente módulo de dominio. Va a ser el primer caso con **dos** relaciones `@ManyToOne` simultáneas (`fk_court_id` + `fk_time_block_id`) más un campo propio sin FK (`day_of_week`), y el primer lugar natural para reutilizar tanto `CourtNotFoundException` como algo de `time-block-module` en el mismo service.
@@ -364,25 +365,36 @@
 
 ---
 
-## 22. 🟡 `venue_id` no se revalida contra el destino en `PUT` — permite transferir recursos entre venues sin autorización
+## 22. 🔴 `venue_id` no se revalida contra el destino en `PUT` — permite transferir recursos entre venues sin autorización
 
-- **Estado**: 🟡 Pendiente (detectado en revisión, no en Postman — decisión de posponer el fix explícitamente tomada para dejarlo como primer punto del próximo chat).
-- **Contexto**: apareció al revisar (antes de testear `reservation-module` con el usuario "venue admin") si `Court.venue_id` debería poder cambiarse vía `PUT /courts/{id}`.
-- **Síntoma potencial**: `CourtService.update()` permite pisar `venue_id` en un update parcial. Lo mismo pasa en `TimeBlockService.update()`.
+- **Estado**: 🔴 Resuelto en código (4 services). **Pendiente de verificar en el entorno local**: `mvn compile` + checklist de Postman de más abajo (no se pudo compilar en el chat por falta de Maven/red; sí se hizo un chequeo de sintaxis con `javac`).
+- **Contexto**: apareció al revisar (antes de testear `reservation-module` con el usuario "venue admin") si `Court.venue_id` debería poder cambiarse vía `PUT /courts/{id}`. Se detectó por inspección de código, no en Postman.
 - **Causa raíz — dos capas**:
-  1. **Negocio**: conceptualmente no debería ser transferible una cancha (o una franja horaria) de una sede a otra — mismo criterio ya aplicado a `reservation.reserved_by_user_id` (punto 13): es un dato identitario/histórico, no algo que se "edita".
-  2. **Seguridad (la más importante)**: el `@PreAuthorize("... or @venueAuthorization.canManageCourt(#id)")` agregado en este chat evalúa el venue **actual** del recurso, *antes* de correr el método — nunca vuelve a chequear el `venue_id` nuevo que viene en el body. Un usuario con rol solo en el venue A podría, en teoría, hacer `PUT` sobre una cancha suya de A y reasignarla a un venue B donde no tiene ningún rol, sin que el chequeo lo detecte.
-- **Por qué no se disparó testeando**: la vulnerabilidad es de diseño, no de un flujo que se haya ejercitado en Postman todavía — se encontró por inspección de código, revisando `CourtService.update()` antes de seguir con el checklist de `reservation`.
-- **Fix propuesto (pendiente de aplicar)**:
-  - `Court`/`TimeBlock`: sacar `venue_id` del `update()` (queda inmutable, igual criterio que `reservation.reserved_by_user_id`). Si hace falta reubicar una cancha, se borra y se crea de nuevo.
-  - `CourtSchedule`/`Reservation`: **no** se puede aplicar el mismo criterio, porque ahí sí hay un caso de negocio real para reprogramar `court_id`/`time_block_id` (documentado en el punto 13). El fix correcto ahí es re-chequear `canManageVenue()` contra el venue **resultante** después de aplicar el cambio parcial — mismo patrón que ya usa `validateSameVenue()` en ambos services (revalidar sobre el estado final, no sobre el payload).
-- **Concepto para profundizar** ⭐: por qué un `@PreAuthorize` evaluado sobre el estado *previo* de un recurso no alcanza cuando el propio `PUT` puede cambiar la dimensión (acá, el venue) contra la que se autoriza — mismo problema de fondo que las validaciones cruzadas post-update ya documentadas (puntos 10, 12, 17: "revalidar contra el estado final, no contra el payload parcial"), pero aplicado a autorización en vez de a integridad de datos. Buen ejemplo de que agregar seguridad a un endpoint existente puede exponer un supuesto implícito ("el venue de este recurso no cambia") que el código de negocio nunca necesitó cuestionar hasta ahora.
+  1. **Seguridad (la más importante)**: el `@PreAuthorize("... or @venueAuthorization.canManageX(#id)")` evalúa el venue **actual** del recurso, *antes* de correr el método — nunca vuelve a chequear el `venue_id` nuevo del body. Un usuario con rol solo en el venue A podía hacer `PUT` sobre una cancha suya y reasignarla a un venue B donde no tiene ningún rol.
+  2. **Integridad (encontrada al aplicar el fix)**: mover una `Court` o un `TimeBlock` a otro venue dejaba **inconsistentes las filas que ya dependían de ellos** — un `court_schedule`/`reservation` existente quedaba con cancha en el venue B y franja en el venue A, violando `validateSameVenue()` (que solo corre en el alta/update de *esos* recursos, no cuando cambia el recurso del que dependen). Es decir: aunque no hubiera un atacante, el `PUT` de `Court`/`TimeBlock` ya podía corromper datos.
+- **Fix aplicado — un solo invariante para los cuatro recursos: "el venue de un recurso no cambia con un `PUT`"**:
+  - `CourtService.update()` y `TimeBlockService.update()`: `venue_id` es **inmutable**. Si el body trae un `venue_id` distinto al actual → `IllegalArgumentException` (400). Si trae el **mismo** (el front Angular puede reenviar el formulario completo) → no-op, sin error. Se eliminó el bloque que resolvía el `Venue` y hacía `setVenue()`.
+  - `CourtScheduleService.update()` y `ReservationService.update()`: se captura el `originalVenueId` **antes** del merge parcial y, después, `validateVenueUnchanged(originalVenueId, courtFinal)` compara contra el venue de la cancha **resultante** (400 si cambió). Sigue permitido reprogramar dentro del mismo venue (otra cancha, otra franja): ese caso de negocio (punto 13) se mantiene. Corre **antes** de `validateSameVenue()` para que el mensaje sea el más específico.
+  - Mover entre venues = borrar y crear de nuevo. El `create()` sí autoriza contra el venue destino (`#dto.venue_id` en Court/TimeBlock/CourtSchedule; en Reservation el alta está abierta a cualquier cliente).
+- **Desvío respecto del fix propuesto originalmente, y por qué**: la propuesta era "re-chequear `canManageVenue()` contra el venue resultante" en `CourtSchedule`/`Reservation`. Funciona para `CourtSchedule`, pero **rompe `Reservation`**: `canManageReservation()` deja pasar al *dueño* de la reserva (un cliente sin ningún rol en el venue, punto 23), y ese re-chequeo lo bloquearía incluso al reprogramar dentro de su propio venue. Fijar el venue como invariante resuelve los dos casos sin distinguir quién llama, y además mantiene los services **agnósticos de la seguridad** (no leen el `SecurityContext` ni dependen de `VenueAuthorization`, que vive en `app` y crearía una dependencia circular — punto 23).
+- **Trade-off aceptado**: ni siquiera `ADMIN` puede mover un recurso entre venues por `PUT`. Coherente con que el venue funciona como frontera de pertenencia (análogo a un tenant); si algún día hace falta "transferir" cancha con todo su historial, sería una operación explícita y separada, no un efecto colateral de un update parcial.
+- **Duplicación aceptada**: `validateVenueUnchanged` queda duplicado (mismo cuerpo) en `CourtScheduleService` y `ReservationService`, igual criterio que `validateSameVenue` (punto 17): son dos casos, se extrae cuando haya un tercero.
+- **Archivos modificados**: `court-module/.../service/CourtService.java`, `time-block-module/.../service/TimeBlockService.java`, `court-schedule-module/.../service/CourtScheduleService.java`, `reservation-module/.../service/ReservationService.java`. Los controllers y `VenueAuthorization` no se tocaron.
+- **Checklist de Postman a correr** (hace falta 2 venues, cada uno con al menos una cancha y una franja; y un usuario con rol solo en el venue A):
+  - `PUT /courts/{id de A}` con `venue_id` = B → **400** (probar con el usuario de A y con ADMIN).
+  - `PUT /courts/{id de A}` con `venue_id` = A (el mismo) y un `name` nuevo → **200**.
+  - `PUT /courts/{id}` solo con `name` → **200**, sin tocar el venue.
+  - Los tres casos anteriores, idénticos, sobre `/time-blocks/{id}`.
+  - `PUT /court-schedules/{id de A}` con `court_id` + `time_block_id` de B (ambos) → **400** (este es el caso que `validateSameVenue` solo no atrapaba).
+  - `PUT /court-schedules/{id de A}` con otra cancha del venue A → **200**.
+  - `PUT /reservations/{id}` como **dueño sin rol en el venue**: con `court_id` + `time_block_id` de otro venue → **400**; con otra cancha/franja del mismo venue → **200**; con `{"status":"CANCELLED"}` → **200** (regresión: el flujo del dueño no se rompió).
+- **Concepto para profundizar** ⭐: por qué un `@PreAuthorize` evaluado sobre el estado *previo* de un recurso no alcanza cuando el propio `PUT` puede cambiar la dimensión (acá, el venue) contra la que se autoriza — mismo problema de fondo que las validaciones cruzadas post-update (puntos 10, 12, 17: "revalidar contra el estado final, no contra el payload parcial"), pero aplicado a autorización. Y la lección de diseño: ante una vulnerabilidad de autorización por un campo mutable, muchas veces el fix más robusto no es "chequear mejor" sino **volver inmutable el campo** (reduce la superficie de ataque en vez de agregar lógica). Además: agregar seguridad a un endpoint existente expone supuestos implícitos ("el venue de este recurso no cambia") que el código de negocio nunca había necesitado cuestionar.
 
 ---
 
 ## 23. 🟢 Autorización por rol/venue: `@PreAuthorize` + `VenueAuthorization` (siguiente paso del punto 21)
 
-- **Estado**: 🟢 Resuelto y testeado end-to-end en Postman (`reservation-module` confirmado por el usuario, "anda bien en todos sus endpoints"; `court-module` confirmado contra un usuario sin rol global, ver más abajo). Pendiente conocido: ver punto 22.
+- **Estado**: 🟢 Resuelto y testeado end-to-end en Postman (`reservation-module` confirmado por el usuario, "anda bien en todos sus endpoints"; `court-module` confirmado contra un usuario sin rol global, ver más abajo). El hueco de `PUT` que cambia el venue quedó resuelto en el punto 22.
 - **Objetivo**: conectar `user_venue_role` (punto 21) con Spring Security de verdad — hasta acá cualquier usuario autenticado podía gestionar cualquier venue/cancha/franja/horario/reserva, sin importar si tenía un rol asignado ahí.
 - **`VenueAuthorization`, bean nuevo, vive en `app-module`** (`com.example.sportbooking.security`), no en `user-venue-role-module`: mismo motivo que `GlobalExceptionHandler` (punto 20) — es el único módulo que ya depende de los 7 módulos de dominio + `auth-module`, así que es el único que puede resolver la pregunta sin crear una dependencia circular (`user-venue-role-module` depende de `venue-module`; si `venue-module` necesitara importar la clase de autorización, sería circular). Los controllers de cada módulo referencian el bean **por nombre** dentro del SpEL de `@PreAuthorize` (`@venueAuthorization.canManageX(...)`), no por import de clase — Spring lo resuelve en runtime contra el `ApplicationContext`, así que ningún módulo de dominio necesita depender de `app-module` para usarlo.
 - **Regla base, deliberadamente simple**: `canManageVenue(venueId)` = el usuario autenticado tiene **al menos una** fila en `user_venue_role` para ese venue, sin distinguir todavía por nombre de rol (`OWNER` vs. `STAFF`, etc.) — mismo criterio de "no abstraer hasta la 3ra necesidad real" que ya aparece en el punto 17. Los demás métodos (`canManageCourt`, `canManageTimeBlock`, `canManageCourtSchedule`, `canManageUserVenueRole`) resuelven el venue del recurso (directo o navegando `court→venue`) y delegan en `canManageVenue`.
@@ -396,17 +408,41 @@
 - **Archivos modificados**: `auth-module/.../config/SecurityConfiguration.java` (+`@EnableMethodSecurity`), `venue-module/.../controller/VenueController.java`, `court-module/.../controller/CourtController.java`, `time-block-module/.../controller/TimeBlockController.java`, `court-schedule-module/.../controller/CourtScheduleController.java`, `reservation-module/.../controller/ReservationController.java`, `user-venue-role-module/.../controller/UserVenueRoleController.java`.
 - **Prerrequisito no resuelto automáticamente**: no hay seed de datos — para probar esto hace falta al menos un usuario con rol global `ADMIN` creado a mano en `user_global_role` (el propio usuario documentó que así lo vino haciendo).
 - **Testeado**: `reservation-module` completo, todos los endpoints OK con el criterio de dueño/staff-de-venue/ADMIN. `court-module` verificado con un segundo usuario ("venue admin", sin rol global — `/auth/me` devuelve `authorities: []` a propósito, confirmando que no tiene bypass de ADMIN) para ejercitar la rama nueva de `canManageVenue()`, no solo el atajo de ADMIN.
-- **Pendiente relacionado, no bloqueante**: ver punto 22 — el `@PreAuthorize` de `update()` evalúa el venue *actual* del recurso antes de correr el método, no revalida contra un `venue_id` nuevo que venga en el body. Afecta a `Court`/`TimeBlock` (fix propuesto: inmutabilidad) y a `CourtSchedule`/`Reservation` (fix propuesto: re-chequeo post-update). Queda para el próximo chat.
+- **Pendiente relacionado (ya resuelto)**: el `@PreAuthorize` de `update()` evalúa el venue *actual* del recurso, no un `venue_id` nuevo del body — ver punto 22 para el fix (venue inmutable en los cuatro recursos).
 - **Concepto para profundizar** ⭐: la diferencia entre **autenticación** (quién sos, ya resuelta desde el punto 3.1) y **autorización granular por recurso** (qué podés hacer con ESTE recurso puntual, no solo si estás logueado) — y por qué esta segunda capa casi siempre necesita resolver una cadena de relaciones (`Court → Venue`, `Reservation → Court → Venue`) en vez de un chequeo plano de rol. También: cómo Spring Security resuelve un bean por nombre dentro de una expresión SpEL (`@beanName.metodo(...)`) sin necesitar un import de clase Java, y por qué eso permite desacoplar el código de autorización del módulo que lo usa.
 
 ---
 
-**Pendientes para el próximo chat, en orden:**
-1. Punto 22 (inmutabilidad de `venue_id` en `Court`/`TimeBlock` + re-chequeo post-update en `CourtSchedule`/`Reservation`).
-2. Resto del backlog de la sección 7 sin tocar (credenciales hardcodeadas, testing automatizado, FKs reales faltantes en `reservation`/`user_venue_role`).
+## 24. 🟡 El dueño de una reserva puede auto-confirmarla y auto-marcarla como pagada vía `PUT`
+
+- **Estado**: 🟡 Pendiente (detectado por inspección de código mientras se resolvía el punto 22; sin probar en Postman todavía).
+- **Síntoma potencial**: `PUT /reservations/{id}` deja pasar al dueño de la reserva (`canManageReservation`, punto 23), y `ReservationService.update()` aplica `status` y `payment_status` del body sin distinguir quién llama. Un cliente sin ningún rol en el venue podría mandar `{"payment_status": "PAID", "status": "CONFIRMED"}` sobre su propia reserva y saltear el cobro.
+- **Causa raíz**: el `@PreAuthorize` autoriza el **endpoint** ("¿podés editar esta reserva?"), pero no los **campos** ("¿podés editar *este campo*?"). El dueño necesita poder reprogramar y cancelar; no necesita (ni debería) poder tocar el estado de pago. Es la misma familia que *mass assignment*: el DTO acepta más campos de los que ese rol debería poder escribir.
+- **Fix a evaluar (pendiente de decidir)**: `payment_status` (y probablemente pasar `status` a `CONFIRMED`) solo editable por personal del venue/ADMIN. Opciones: (a) endpoints separados por intención (`PATCH /reservations/{id}/cancel`, `PATCH .../payment`) cada uno con su `@PreAuthorize`; (b) un DTO distinto para el dueño vs. staff; (c) chequear el rol dentro del service (descartada a priori por el mismo motivo del punto 22: acopla el service a la seguridad). Decisión de diseño a charlar antes de codear.
+- **Concepto para profundizar** ⭐: autorización a nivel de **campo** vs. a nivel de **recurso**, y mass assignment / *over-posting* como vulnerabilidad clásica (OWASP API Security: *Broken Object Property Level Authorization*).
 
 ---
 
-## Convención de entrega (zips)
+## 25. 🟢 Cambio de convención de trabajo: el asistente modifica los archivos directo
 
-A partir de esta entrada: cada zip generado en el chat contiene **únicamente los archivos nuevos o modificados** en esa sesión, con su ruta completa desde la raíz del proyecto (para poder copiarlos directo sobre el proyecto local sin pisar nada más). La bitácora es la fuente de verdad de *qué* cambió — cada entrada de esta bitácora que corresponda a un cambio de código debe listar explícitamente los **archivos modificados** (como en el punto 14), así el contenido del zip de esa sesión y lo documentado acá coinciden 1 a 1.
+- **Qué cambia**: se deroga la convención del punto 11 y de la sección "Convención de entrega (zips)" — el asistente ya no entrega archivos nuevos/modificados ni zips para copiar a mano. A partir de ahora **aplica los cambios directamente sobre los archivos del repo** (los crea/edita en el workspace) y el usuario testea después en local.
+- **Por qué**: la sesión corre sobre el repo real (OpenCode), así que listar/empaquetar archivos para copiarlos a mano es un paso redundante. El usuario testea con `mvn compile` + Postman cuando el asistente termina.
+- **Qué se mantiene**: la bitácora sigue documentando cada cambio con sus **archivos modificados** (ruta completa) y su **concepto para profundizar** — ahora como registro histórico de qué cambió y por qué, no como mecanismo de entrega.
+- **Flujo nuevo**: pedido/propuesta → el asistente edita los archivos → el usuario corre `mvn compile` + Postman local → si falla, se itera.
+
+---
+
+**Pendientes para el próximo chat, en orden:**
+1. Verificar el punto 22 en local: `mvn compile` + checklist de Postman de esa sección.
+2. Punto 24 (autorización por campo en `PUT /reservations`) — requiere una decisión de diseño primero.
+3. Resto del backlog de la sección 7 sin tocar (credenciales hardcodeadas, testing automatizado, FKs reales faltantes en `reservation`/`user_venue_role`).
+
+---
+
+## Convención de entrega (derogada — ver punto 25)
+
+> ⚠️ **Esta convención quedó sin efecto** (ver punto 25). El asistente ahora modifica los archivos directo en el workspace; ya no se entregan archivos ni zips. El texto de abajo se conserva solo como registro histórico.
+>
+> Lo que **sí** se mantiene: cada entrada de esta bitácora que corresponda a un cambio de código lista explícitamente los **archivos modificados** (como en el punto 14), para que el registro y lo realmente tocado coincidan 1 a 1.
+>
+> — Redacción original: cada zip generado en el chat contenía **únicamente los archivos nuevos o modificados** en esa sesión, con su ruta completa desde la raíz del proyecto, para copiarlos directo sobre el proyecto local sin pisar nada más.

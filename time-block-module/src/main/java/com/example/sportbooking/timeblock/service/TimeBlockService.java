@@ -59,13 +59,19 @@ public class TimeBlockService {
 	public TimeBlock update(Long id, TimeBlockDTO dto) {
 		TimeBlock timeBlock = findById(id); // ya tira TimeBlockNotFoundException si no existe
 
+		// venue_id es INMUTABLE despues del alta (bitacora, punto 22), mismo
+		// criterio que CourtService.update(): el @PreAuthorize evalua el venue
+		// ACTUAL antes de correr el metodo, y ademas los court_schedule/
+		// reservation existentes que usan esta franja quedarian apuntando a
+		// una cancha de otro venue. Reenviar el mismo venue_id es un no-op.
+		Long currentVenueId = timeBlock.getVenue() != null ? timeBlock.getVenue().getId() : null;
+		if (dto.getVenue_id() != null && !dto.getVenue_id().equals(currentVenueId)) {
+			throw new IllegalArgumentException(
+					"El venue_id de una franja horaria no se puede modificar; eliminala y crea una nueva en el venue destino");
+		}
+
 		// Update parcial, mismo criterio que VenueService/CourtService: solo
 		// se pisan los campos que vinieron en el body.
-		if (dto.getVenue_id() != null) {
-			Venue venue = venueRepository.findById(dto.getVenue_id())
-					.orElseThrow(() -> new VenueNotFoundException(dto.getVenue_id()));
-			timeBlock.setVenue(venue);
-		}
 		if (dto.getBlock_group() != null) {
 			timeBlock.setBlock_group(dto.getBlock_group());
 		}
