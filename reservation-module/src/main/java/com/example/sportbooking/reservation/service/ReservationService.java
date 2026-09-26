@@ -142,14 +142,12 @@ public class ReservationService {
 		if (dto.getReserved_for_name() != null) {
 			reservation.setReserved_for_name(dto.getReserved_for_name());
 		}
-		if (dto.getStatus() != null) {
-			validateStatus(dto.getStatus());
-			reservation.setStatus(dto.getStatus());
-		}
-		if (dto.getPayment_status() != null) {
-			validatePaymentStatus(dto.getPayment_status());
-			reservation.setPayment_status(dto.getPayment_status());
-		}
+
+		// status y payment_status ya NO se tocan acá (bitácora, punto 24):
+		// el PUT es solo reprogramación. Los cambios de estado van por
+		// updateStatus/updatePaymentStatus/cancel, cada uno con su propio
+		// @PreAuthorize, así el dueño de la reserva no puede hacer mass
+		// assignment sobre campos de gestión.
 
 		// Re-validamos contra el estado FINAL de la entity (mismo criterio
 		// que en CourtScheduleService.update()): si el PUT trae solo
@@ -168,20 +166,52 @@ public class ReservationService {
 				reservation.getReserved_for_name());
 
 		// Misma lógica de superposición que en el alta, pero excluyendo la
-		// propia reserva (ver ReservationRepository.
-		// existsByCourt_IdAndTimeBlock_IdAndDateAndStatusNotAndIdNot):
-		// reprogramar el mismo turno sin cambiar nada no debería "chocar"
-		// contra sí mismo.
-		if (!CANCELLED.equals(reservation.getStatus())) {
-			boolean overlaps = reservationRepository.existsByCourt_IdAndTimeBlock_IdAndDateAndStatusNotAndIdNot(
-					reservation.getCourt().getId(), reservation.getTimeBlock().getId(), reservation.getDate(),
-					CANCELLED, id);
-			if (overlaps) {
-				throw new IllegalStateException(
-						"Ya existe otra reserva activa para esa cancha, franja horaria y fecha");
-			}
-		}
+		// propia reserva (ver validateNoOverlapExcludingSelf). Reprogramar
+		// el mismo turno sin cambiar nada no debería "chocar" contra sí
+		// mismo.
+		validateNoOverlapExcludingSelf(reservation);
 
+		return reservationRepository.save(reservation);
+	}
+
+	// Cancelar es una acción que el DUEÑO de la reserva puede hacer (ver
+	// VenueAuthorization.canManageReservation en el @PreAuthorize): es el
+	// caso de uso "me arrepentí, libero el turno". Por eso tiene endpoint
+	// propio y no exige ser personal del venue. Setear CANCELLED libera el
+	// turno, así que no hace falta re-chequear superposición.
+	public Reservation cancel(Long id) {
+		Reservation reservation = findById(id);
+		reservation.setStatus(CANCELLED);
+		return reservationRepository.save(reservation);
+	}
+
+	// Confirmar / reponer PENDING / cancelar desde la gestión del venue. A
+	// diferencia de cancel(), acá el @PreAuthorize exige rol en el venue
+	// (canManageReservationVenue), no alcanza con ser el dueño: el estado de
+	// la reserva es parte de la operación de la sede.
+	public Reservation updateStatus(Long id, String status) {
+		if (status == null) {
+			throw new IllegalArgumentException("El status es obligatorio");
+		}
+		validateStatus(status);
+		Reservation reservation = findById(id);
+		reservation.setStatus(status);
+		// Confirmar/reactivar una reserva puede volver a ocupar el turno:
+		// hay que re-validar contra el estado final, igual que en el update.
+		validateNoOverlapExcludingSelf(reservation);
+		return reservationRepository.save(reservation);
+	}
+
+	// payment_status es exclusivamente de gestión: el dueño no puede
+	// marcarla PAID ni REFUNDED (mass assignment / OWASP API3). El
+	// @PreAuthorize del endpoint lo garantiza con canManageReservationVenue.
+	public Reservation updatePaymentStatus(Long id, String paymentStatus) {
+		if (paymentStatus == null) {
+			throw new IllegalArgumentException("El payment_status es obligatorio");
+		}
+		validatePaymentStatus(paymentStatus);
+		Reservation reservation = findById(id);
+		reservation.setPayment_status(paymentStatus);
 		return reservationRepository.save(reservation);
 	}
 
@@ -234,6 +264,27 @@ public class ReservationService {
 			// el estado actual" (409, ver ReservationController).
 			throw new IllegalStateException(
 					"Ya existe una reserva activa para esa cancha, franja horaria y fecha");
+		}
+	}
+
+	// Variante de validateNoOverlap para operaciones sobre una reserva YA
+	// existente (reprogramación en update, cambio de estado en
+	// updateStatus): excluye la propia reserva del chequeo, porque si no
+	// "chocaría" contra sí misma. Si el estado final es CANCELLED el turno
+	// queda libre, así que no hay nada que validar. Extraído del update al
+	// aparecer la segunda necesidad real (updateStatus también puede
+	// reactivar un turno), mismo criterio de "no abstraer antes" de la
+	// bitácora (punto 17).
+	private void validateNoOverlapExcludingSelf(Reservation reservation) {
+		if (CANCELLED.equals(reservation.getStatus())) {
+			return;
+		}
+		boolean overlaps = reservationRepository.existsByCourt_IdAndTimeBlock_IdAndDateAndStatusNotAndIdNot(
+				reservation.getCourt().getId(), reservation.getTimeBlock().getId(), reservation.getDate(),
+				CANCELLED, reservation.getId());
+		if (overlaps) {
+			throw new IllegalStateException(
+					"Ya existe otra reserva activa para esa cancha, franja horaria y fecha");
 		}
 	}
 

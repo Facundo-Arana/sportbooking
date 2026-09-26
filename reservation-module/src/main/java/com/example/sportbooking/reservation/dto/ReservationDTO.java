@@ -27,10 +27,12 @@ public class ReservationDTO {
 
 	private String reserved_for_name;
 
-	// Solo se usan en el update (cancelar, confirmar pago, etc.) - en el
-	// alta el service los fuerza a "PENDING" y no lee estos campos del DTO.
-	private String status;
-
-	private String payment_status;
+	// status y payment_status NO van acá a propósito (bitácora, punto 24):
+	// este DTO es el body del alta y de la reprogramación (PUT), acciones
+	// que no implican cambiar el estado de la reserva. Los cambios de estado
+	// tienen sus propios DTOs y endpoints (PATCH /{id}/status,
+	// /{id}/payment, /{id}/cancel) para que un cliente dueño de la reserva
+	// no pueda hacer mass assignment sobre campos que solo gestiona el
+	// personal del venue (OWASP API3).
 
 }

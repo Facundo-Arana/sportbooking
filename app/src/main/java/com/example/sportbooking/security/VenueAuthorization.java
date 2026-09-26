@@ -139,4 +139,22 @@ public class VenueAuthorization {
 		}).orElse(false);
 	}
 
+	// Punto 24 de la bitácora: separa la condición de "personal del venue"
+	// de la de "dueño" que en canManageReservation viven juntas. Hace falta
+	// porque hay acciones sobre una reserva que el DUEÑO sí puede hacer
+	// (cancelar la propia, ver ReservationController.cancel) y otras que no
+	// (fijar status/payment_status, que son gestión de la sede). Con
+	// canManageReservation el dueño pasaba el filtro en todas; con este
+	// método, solo pasa quien tiene rol en el venue (el bypass ADMIN se
+	// compone aparte, igual que en el resto).
+	public boolean canManageReservationVenue(Long reservationId) {
+		if (reservationId == null) {
+			return false;
+		}
+		return reservationRepository.findById(reservationId)
+				.map(reservation -> reservation.getCourt() != null && reservation.getCourt().getVenue() != null
+						&& canManageVenue(reservation.getCourt().getVenue().getId()))
+				.orElse(false);
+	}
+
 }

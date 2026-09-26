@@ -9,6 +9,7 @@
 - Monolito modular Maven. `sportbooking` raíz = aggregator (`packaging=pom`); `app` = único jar ejecutable y depende de los 8 módulos.
 - Dominios implementados, todos con estructura `entity → dto → exception → repository → service → controller → mapper`: `user`, `auth`, `venue`, `court`, `time-block`, `court-schedule`, `user-venue-role`, `reservation`.
 - CRUD con alta / listado con filtros / detalle / update parcial / baja. `user-venue-role` **no tiene `PUT`**: su identidad ES el trío de FKs, "editarla" equivale a borrar y crear.
+- `reservation` tiene endpoints por intención además del CRUD: `PATCH /reservations/{id}/cancel` (dueño o personal), `.../status` y `.../payment` (solo personal del venue). `PUT` quedó solo para reprogramar (sin `status`/`payment_status`).
 - Seguridad: JWT stateless + autorización por rol/venue (`@PreAuthorize` + bean `VenueAuthorization`).
 - Respuestas de la API: Response DTOs por entity, mapeados con MapStruct **en el controller**.
 - Errores centralizados en `GlobalExceptionHandler` (app-module): 400 / 404 / 409 / 401 / 500.
@@ -38,7 +39,7 @@
 - `@EnableMethodSecurity` es obligatorio; sin él, `@PreAuthorize` se ignora **en silencio**.
 - Autorización de recursos vía `@PreAuthorize` con SpEL que llama al bean `@venueAuthorization` **por nombre** (no por import), así los módulos de dominio no dependen de `app`.
 - Regla base: `canManageVenue(venueId)` = el usuario tiene al menos una fila en `user_venue_role` para ese venue (sin distinguir el nombre del rol todavía).
-- `canManageReservation`: la puede manejar quien la creó (dueño) **o** quien tiene rol en el venue de la cancha. El bypass `hasRole('ADMIN')` se agrega aparte en cada `@PreAuthorize`.
+- `canManageReservation`: la puede manejar quien la creó (dueño) **o** quien tiene rol en el venue de la cancha. `canManageReservationVenue`: solo quien tiene rol en el venue (sin dueño), para las acciones de gestión (`PATCH .../status`, `.../payment`). El bypass `hasRole('ADMIN')` se agrega aparte en cada `@PreAuthorize`.
 - CORS: solo `http://localhost:4200` (Angular). El `CorsConfigurationSource` se engancha dentro de `SecurityConfiguration` (`.cors()`); no declarar un `CorsFilter` suelto.
 - Defensa en profundidad: `User.password_hash` con `@JsonIgnore`; `User.globalRoles` ↔ `UserGlobalRole.user` con `@JsonManagedReference`/`@JsonBackReference`. Igual, la regla es no exponer entities.
 
@@ -74,7 +75,7 @@ Cada uno salió de un caso real del proyecto.
 - **Validación cross-field**: en update parcial hay que validar contra el estado final, no contra el payload. Extendido a validación **entre relaciones** (`validateSameVenue`).
 - **Check-then-act**: la validación en service no protege ante concurrencia; hace falta un constraint real en la base. Relacionado: `ddl-auto` no versiona ni falla fuerte → en un proyecto real, Flyway/Liquibase.
 - **Autorización pre-ejecución vs campo mutable**: `@PreAuthorize` evalúa el estado previo; si un `PUT` puede cambiar la dimensión contra la que se autoriza (venue), el fix más robusto es volver el campo inmutable.
-- **Autorización por campo vs por recurso**: el dueño de una reserva puede editarla pero no debería tocar `payment_status` (mass assignment / OWASP API3).
+- **Autorización por campo vs por recurso**: "puede manejar la reserva" (recurso) ≠ "puede cambiar `status`/`payment_status`" (campos). Resuelto con endpoints por intención en vez de validar el body: `PUT` ya no acepta esos campos (mass assignment imposible por construcción) y se agregaron `PATCH .../cancel` (dueño o personal), `.../status` y `.../payment` (solo personal). Es la misma lógica de "hacer estructuralmente imposible el caso" que el `venue_id` inmutable (punto 22). OWASP API3.
 - **Orden de filtros**: un `CorsFilter` suelto corre después de Spring Security; CORS debe integrarse vía `HttpSecurity.cors()`, y el preflight `OPTIONS` requiere `permitAll`.
 - **Excepciones de negocio custom**: el service no conoce HTTP; el controller (o `@RestControllerAdvice`) traduce a códigos.
 - **`@ControllerAdvice` vs `@RestControllerAdvice`**: el segundo agrega `@ResponseBody` implícito.
@@ -98,15 +99,13 @@ Cada uno salió de un caso real del proyecto.
 - `21` — módulo `user_venue_role` (sin `PUT`); `RoleRepository`/`RoleNotFoundException` en `user-module`.
 - `22` — `venue_id` inmutable en `PUT`.
 - `23` — `@PreAuthorize` + `VenueAuthorization`.
-- `24` — pendiente: autorización por campo en `PUT /reservations`.
+- `24` — **resuelto**: autorización por campo en reservas. `PUT /reservations/{id}` ya no toca `status`/`payment_status`; se agregaron `PATCH .../cancel` (dueño o personal vía `canManageReservation`), `.../status` y `.../payment` (solo personal vía `canManageReservationVenue`). Archivos: `reservation-module/.../dto/ReservationDTO.java`, `reservation-module/.../dto/ReservationStatusDTO.java` (nuevo), `reservation-module/.../dto/ReservationPaymentDTO.java` (nuevo), `reservation-module/.../service/ReservationService.java`, `reservation-module/.../controller/ReservationController.java`, `app/.../security/VenueAuthorization.java`.
 
 ---
 
 ## Pendientes / deuda técnica
 
-1. **Verificar en local** los cambios de `venue_id` inmutable (punto 22): `mvn compile` + checklist de Postman.
-2. **Punto 24 — autorización por campo en `PUT /reservations`**: el dueño no debería poder setear `payment_status` ni pasar `status` a `CONFIRMED`. Requiere decisión de diseño (endpoints por intención `PATCH .../cancel` y `.../payment`, o DTO distinto por rol).
-3. Credenciales de Postgres y `jwt.secret` hardcodeados → variables de entorno o `application-local.properties` fuera de Git.
-4. FKs reales faltantes a nivel de base en `reservation` y `user_venue_role`.
-5. Testing automatizado (hoy no hay ninguno).
-6. Remodelado más amplio del esquema de base (evaluar en conjunto, no parche por parche).
+1. Credenciales de Postgres y `jwt.secret` hardcodeados → variables de entorno o `application-local.properties` fuera de Git.
+2. FKs reales faltantes a nivel de base en `reservation` y `user_venue_role`.
+3. Testing automatizado (hoy no hay ninguno).
+4. Remodelado más amplio del esquema de base (evaluar en conjunto, no parche por parche).
