@@ -48,12 +48,13 @@ public class Reservation {
 	@JoinColumn(name = "fk_time_block_id")
 	private TimeBlock timeBlock;
 
-	// Quién generó la reserva (siempre un usuario autenticado). A diferencia
-	// de fk_court_id/fk_time_block_id, en sportbooking.sql estas dos columnas
-	// no tienen CONSTRAINT de FK a nivel de base (ver punto 7 de la
-	// bitácora, pendiente de remodelado del esquema) - igual se mapean con
-	// @ManyToOne porque Hibernate no exige que la FK exista en la base para
-	// hacer el JOIN a nivel de aplicación, solo para integridad referencial.
+	// Quién generó la reserva (siempre un usuario autenticado). El constraint
+	// de FK (fk_reserved_by_user_id / fk_reserved_for_user_id) lo administra
+	// Hibernate con ddl-auto=update, con nombres generados tipo fk<hash>. No
+	// agregarlo a mano con otro nombre: ddl-auto crea un duplicado sobre la
+	// misma columna (bitácora punto 26). El @ManyToOne no necesita la FK
+	// física para el JOIN, pero el constraint es lo que da integridad
+	// referencial real.
 	@ManyToOne
 	@JoinColumn(name = "fk_reserved_by_user_id")
 	private User reservedByUser;

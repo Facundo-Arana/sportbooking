@@ -47,10 +47,10 @@
 
 ## Base de datos
 
-- PostgreSQL local, schema `platform`. Config única en `app/src/main/resources/application.properties`: puerto 8081, `ddl-auto=update`, credenciales y `jwt.secret` hardcodeados (deuda conocida).
+- PostgreSQL local, schema `platform`. Config única en `app/src/main/resources/application.properties`: puerto 8081, `ddl-auto=update`. Los secretos salen de placeholders (`${DB_USERNAME:}`, `${DB_PASSWORD:}`, `${JWT_SECRET:}`) resueltos por **variable de entorno** (prioridad) o por `application-local.properties` (no versionado), importado con `spring.config.import`. El plugin `spring-boot-maven-plugin` corre con `workingDirectory` = root del repo, para que `./application-local.properties` se encuentre siempre.
 - `ddl-auto=update` aplica `ALTER TABLE` al arrancar y **falla en silencio** si hay datos que violan un constraint nuevo. No hay Flyway/Liquibase ni scripts versionados.
 - Constraints reales vía anotaciones en la entity: `UNIQUE`/`NOT NULL` en `user.email`/`username`/`password_hash` y `venue.name`.
-- Varias FK del dump original **no existen a nivel de base** (ej. `fk_reserved_by_user_id`; `fk_user_id`/`fk_role_id` en `user_venue_role`) aunque se mapeen con `@ManyToOne`.
+- Los constraints de FK los crea/administra Hibernate con `ddl-auto=update` (nombres generados tipo `fk<hash>`), incluso sobre tablas ya existentes. **No** agregar FK a mano con otro nombre: ddl-auto no reconoce el nombre y crea un duplicado sobre la misma columna (ver punto 26).
 - No hay seed de datos: probar la autorización requiere un `ADMIN` en `user_global_role` creado a mano.
 
 ---
@@ -100,12 +100,13 @@ Cada uno salió de un caso real del proyecto.
 - `22` — `venue_id` inmutable en `PUT`.
 - `23` — `@PreAuthorize` + `VenueAuthorization`.
 - `24` — **resuelto**: autorización por campo en reservas. `PUT /reservations/{id}` ya no toca `status`/`payment_status`; se agregaron `PATCH .../cancel` (dueño o personal vía `canManageReservation`), `.../status` y `.../payment` (solo personal vía `canManageReservationVenue`). Archivos: `reservation-module/.../dto/ReservationDTO.java`, `reservation-module/.../dto/ReservationStatusDTO.java` (nuevo), `reservation-module/.../dto/ReservationPaymentDTO.java` (nuevo), `reservation-module/.../service/ReservationService.java`, `reservation-module/.../controller/ReservationController.java`, `app/.../security/VenueAuthorization.java`.
+- `25` — **resuelto**: secretos fuera del repo (híbrido archivo-local + env vars). Síntoma: credenciales de Postgres y `jwt.secret` en texto plano y versionados. Causa raíz: valores escritos directo en `application.properties`. Fix: la config commiteada queda con placeholders (`${DB_USERNAME:}`, `${DB_PASSWORD:}`, `${JWT_SECRET:}`, `${DB_URL:...}`); `spring.config.import=optional:file:./application-local.properties,optional:file:../application-local.properties` importa un archivo **no versionado** con los valores locales; las **variables de entorno** del mismo nombre pisan el archivo (mayor precedencia en los `PropertySources`). El `spring-boot-maven-plugin` se corre con `workingDirectory` = root del repo. Se importan las dos rutas (`./` y `../`) porque el *working directory* al lanzar la app no es único: Maven CLI corre en el root, pero Eclipse/IntelliJ al correr la main class (o `java -jar` desde el módulo) corre en `app/`; con `optional:` una ruta que no existe se ignora en silencio y la password queda vacía (síntoma: `SCRAM-based authentication, but no password was provided`). Archivos: `app/src/main/resources/application.properties`, `app/pom.xml`, `.gitignore`, `application-local.properties` (nuevo, ignorado por Git), `AGENTS.md`.
+- `26` — **resuelto (el pendiente no era real)**: se creyó que faltaban FKs a nivel de base. Síntoma: se agregaron a mano con `db/migration/V1__add_missing_fk_constraints.sql` las FK de `reservation.fk_reserved_by_user_id` / `fk_reserved_for_user_id` y `user_venue_role.fk_user_id` / `fk_role_id`; en el ERD de DBeaver aparecieron relaciones duplicadas. Causa raíz: esas FK **ya existían**, creadas por Hibernate con `ddl-auto=update` y nombres generados (`fk<hash>`); el script manual las volvió a crear con otro nombre → dos constraints sobre la misma columna. Conclusión: `ddl-auto=update` sí crea FK sobre tablas existentes (contrario a lo que decía la nota vieja); agregarlas a mano con otro nombre solo duplica. Fix: `DROP CONSTRAINT` de los cuatro constraints de nombre descriptivo (se conservan los de Hibernate, que son los que ddl-auto reconoce y no recreará) y eliminación del script. Concepto: no mezclar DDL manual con `ddl-auto`; usar Flyway/Liquibase si se quiere control de constraints. Archivos: `db/migration/V1__add_missing_fk_constraints.sql` (eliminado), `reservation-module/src/main/java/com/example/sportbooking/reservation/entity/Reservation.java`, `user-venue-role-module/src/main/java/com/example/sportbooking/uservenuerole/entity/UserVenueRole.java`, `bitacora-tecnica-sportbooking.md`, `AGENTS.md`.
 
 ---
 
 ## Pendientes / deuda técnica
 
-1. Credenciales de Postgres y `jwt.secret` hardcodeados → variables de entorno o `application-local.properties` fuera de Git.
-2. FKs reales faltantes a nivel de base en `reservation` y `user_venue_role`.
-3. Testing automatizado (hoy no hay ninguno).
-4. Remodelado más amplio del esquema de base (evaluar en conjunto, no parche por parche).
+1. Testing automatizado (hoy no hay ninguno).
+2. Remodelado más amplio del esquema de base (evaluar en conjunto, no parche por parche).
+3. Adoptar un migrador de verdad (Flyway/Liquibase): `ddl-auto=update` crea constraints por su cuenta y con nombres generados, no versionables; mezclar DDL manual con él duplica FKs (ver punto 26). Mientras tanto, **no** agregar constraints a mano.

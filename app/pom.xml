@@ -63,6 +63,10 @@
 	    <plugin>
 	      <groupId>org.springframework.boot</groupId>
 	      <artifactId>spring-boot-maven-plugin</artifactId>
+	      <configuration>
+	        <!-- Correr con cwd = root del repo, asi ./application-local.properties se encuentra siempre -->
+	        <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+	      </configuration>
 	    </plugin>
 	    
 	    <plugin>

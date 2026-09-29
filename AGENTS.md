@@ -43,9 +43,9 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 
 ## Base de datos
 
-- PostgreSQL local, schema `platform`. Config única en `app/src/main/resources/application.properties`: puerto 8081, `ddl-auto=update`, credenciales y `jwt.secret` hardcodeados (deuda conocida).
+- PostgreSQL local, schema `platform`. Config en `app/src/main/resources/application.properties`: puerto 8081, `ddl-auto=update`. Los secretos se resuelven por variable de entorno (prioridad) o por `application-local.properties` (no versionado, en el root; importado con `spring.config.import`). La config versionada solo tiene placeholders (`${DB_PASSWORD:}`, `${JWT_SECRET:}`, etc.). El `spring-boot-maven-plugin` corre con `workingDirectory` = root del repo.
 - `ddl-auto=update` aplica `ALTER TABLE` al arrancar y **falla en silencio** si hay datos que violan un constraint nuevo. No hay Flyway/Liquibase ni scripts SQL versionados (la carpeta `db/` no existe en el repo).
-- Varias FK del dump original no existen a nivel de base (ej. `fk_reserved_by_user_id`; `fk_user_id`/`fk_role_id` en `user_venue_role`) aunque se mapeen con `@ManyToOne`.
+- Los constraints de FK los crea/administra Hibernate con `ddl-auto=update` (nombres generados tipo `fk<hash>`), incluso sobre tablas existentes. **No** agregar FK a mano con otro nombre: ddl-auto no reconoce el nombre y crea un duplicado sobre la misma columna (bitácora punto 26).
 - No hay seed de datos: probar la autorización requiere un `ADMIN` en `user_global_role` creado a mano.
 
 ## Flujo de trabajo
@@ -57,6 +57,6 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 ## Gotchas
 
 - El `pom.xml` raíz fija **Java 17** (`java.version`, source/target). Aunque el stack objetivo mencione Java 21, el build real es 17; no usar features de 21 sin actualizar la config.
-- Solo hay un `application.properties`, en `app` (no por módulo).
+- Un solo `application.properties` versionado, en `app` (no por módulo). `application-local.properties` vive en el root y NO se versiona (está en `.gitignore`): ahí van los secretos de desarrollo. Se importa con `optional:file:./` y `optional:file:../` porque el *working directory* depende de cómo se lance (Maven CLI = root; Eclipse/IntelliJ al correr la main class y `java -jar` desde `app` = `app/`); si no se encuentra, `optional:` lo ignora en silencio y falla con `SCRAM-based authentication, but no password was provided`.
 - No existe `UserController`: `User` se expone vía `auth-module` y `UserResponseDTO` anidado en otros módulos.
 - `User.password_hash` tiene `@JsonIgnore` y `User.globalRoles` ↔ `UserGlobalRole.user` usan `@JsonManagedReference`/`@JsonBackReference` como defensa; la regla igual es no exponer entities (usar DTOs).

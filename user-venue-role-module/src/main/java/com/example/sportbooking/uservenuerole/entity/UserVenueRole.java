@@ -48,13 +48,11 @@ public class UserVenueRole {
 	@JoinColumn(name = "fk_venue_id")
 	private Venue venue;
 
-	// A diferencia de fk_venue_id, en sportbooking.sql fk_user_id y
-	// fk_role_id NO tienen CONSTRAINT de FK real a nivel de base (mismo caso
-	// que Reservation.reservedByUser/reservedForUser, ver comentario ahí).
-	// Igual se mapean con @ManyToOne: Hibernate no necesita que la FK física
-	// exista para hacer el JOIN a nivel de aplicación, solo para integridad
-	// referencial real (pendiente marcado en bitácora punto 7 sobre el
-	// esquema en general).
+	// fk_venue_id / fk_user_id / fk_role_id: los constraints de FK los
+	// administra Hibernate con ddl-auto=update, con nombres generados tipo
+	// fk<hash>. No agregarlos a mano con otro nombre: ddl-auto crea un
+	// duplicado (mismo caso que Reservation, ver comentario ahí; bitácora
+	// punto 26). El @ManyToOne no necesita la FK física para el JOIN.
 	@ManyToOne
 	@JoinColumn(name = "fk_user_id")
 	private User user;
