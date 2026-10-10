@@ -105,7 +105,17 @@
 		    <groupId>org.springframework.boot</groupId>
 		    <artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
-	
+
+        <!-- Pruebas: JUnit 5 (Jupiter), Mockito, AssertJ, Spring Test y MockMvc.
+             Se declara en el raíz con scope test para que user-module, auth-module,
+             app y el resto lo hereden igual que web/JPA/security; no afecta el
+             runtime de producción. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
 	 <!-- <dependency>
 		    <groupId>com.example</groupId>
 		    <artifactId>user-module</artifactId>

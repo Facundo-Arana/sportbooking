@@ -54,6 +54,15 @@
             <artifactId>reservation-module</artifactId>
              <version>0.0.1-SNAPSHOT</version>
         </dependency>
+
+        <!-- Base embebida para el test de integración (perfil "test"). Scope
+             test y solo en app: es el único módulo que levanta el contexto
+             completo. Evita depender de la PostgreSQL local. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
   
 	<build>

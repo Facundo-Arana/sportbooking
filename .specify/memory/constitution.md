@@ -1,19 +1,19 @@
 <!--
 Sync Impact Report
-- Version change: N/A (plantilla sin ratificar) → 1.0.0
-- Modified principles: N/A (ratificación inicial)
-- Added sections:
-  - Core Principles (I. Modularidad por dominio, II. DTOs en el borde,
-    III. Errores de negocio traducidos en un único lugar,
-    IV. Seguridad por recurso y por campo,
-    V. Contrato de persistencia explícito,
-    VI. Documentación viva y verificación empírica)
-  - Restricciones Técnicas Adicionales
-  - Flujo de Desarrollo y Puertas de Calidad
-  - Governance
+- Version change: 1.0.0 → 1.1.0 (enmienda MINOR)
+- Modified principles:
+  - VI. Documentación viva y verificación empírica: se elimina la afirmación
+    "el proyecto no tiene tests" / "ningún documento puede afirmar que mvn test
+    verifica algo" y se establece `.\mvnw.cmd test` como puerta de calidad
+    obligatoria (suite unitaria + integración con base embebida).
+- Added sections: Ninguna
 - Removed sections: Ninguna
-- Follow-up TODOs: Ninguno. La fecha de ratificación se toma como la fecha de
-  creación de esta constitución (2026-10-07).
+- Historial:
+  - 1.0.0 (2026-10-07): ratificación inicial. Se crearon los principios I a VI,
+    Restricciones Técnicas Adicionales, Flujo de Desarrollo y Governance.
+  - 1.1.0 (2026-10-08): enmienda del principio VI por la feature
+    `001-auth-tests` (SC-007); se sincroniza `AGENTS.md` y la bitácora.
+- Follow-up TODOs: Ninguno.
 -->
 
 # Constitución de Sportbooking
@@ -118,13 +118,18 @@ archivos modificados (ruta completa) → concepto para profundizar. Los archivos
 listados DEBEN coincidir 1 a 1 con lo realmente tocado. Todo cambio DEBE incluir
 la explicación conceptual detrás.
 
-Hoy el proyecto no tiene tests automatizados. Por lo tanto NINGÚN documento DEBE
-afirmar que `mvn test` verifica algo. La verificación real DEBE ser compilar
-(`mvnw.cmd -q -DskipTests compile`) y probar los endpoints manualmente.
+El proyecto DEBE mantener una suite de pruebas automatizadas y `.\mvnw.cmd test`
+DEBE ser la puerta de calidad obligatoria: un cambio no está terminado si esa
+suite no pasa. La verificación combina pruebas unitarias (reglas de negocio con
+dependencias simuladas) y al menos una prueba de integración que recorra el flujo
+HTTP completo sobre una base embebida, sin pasos manuales. NINGÚN documento DEBE
+afirmar cobertura que la suite no ejecute realmente; `mvnw.cmd test` y los
+chequeos manuales con Postman DEBEN ser complementarios, no sustitutos.
 
 **Rationale**: el proyecto es de portfolio y debe defenderse en entrevistas;
-claridad por sobre atajos. Afirmar cobertura inexistente destruye la credibilidad
-de la documentación.
+claridad por sobre atajos. Una suite reproducible y desatendida es la red de
+seguridad real ante regresiones, y afirmar cobertura inexistente destruye la
+credibilidad de la documentación.
 
 ## Restricciones Técnicas Adicionales
 
@@ -150,14 +155,15 @@ de la documentación.
 
 - El asistente DEBE modificar directamente los archivos del repo; no se entregan
   listados de archivos ni zips. El usuario testea después con `mvn compile` +
-  Postman.
+  `.\mvnw.cmd test` + Postman.
 - Las features DEBEN especificarse antes de implementarse mediante el flujo Spec
   Kit (`/speckit.specify` → `/speckit.plan` → `/speckit.tasks` →
   `/speckit.implement`), tomando esta constitución como marco de gobierno.
-- Puertas de calidad por cambio: (1) compila sin errores; (2) los endpoints
-  responden con el contrato esperado en Postman; (3) no se exponen entidades; (4)
-  los errores respetan el mapeo canónico; (5) la autorización corresponde al rol
-  y venue; (6) la bitácora quedó actualizada.
+- Puertas de calidad por cambio: (1) compila sin errores; (2) `.\mvnw.cmd test`
+  pasa (0 fallos / 0 errores); (3) los endpoints responden con el contrato
+  esperado en Postman; (4) no se exponen entidades; (5) los errores respetan el
+  mapeo canónico; (6) la autorización corresponde al rol y venue; (7) la bitácora
+  quedó actualizada.
 - No hay lint ni formatter configurados; no inventar comandos de verificación que
   no existan.
 
@@ -182,4 +188,4 @@ de menor nivel y NO DEBEN contradecir estos principios.
   arquitectura de módulos o el flujo de trabajo; idealmente al cierre de cada
   feature.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-07 | **Last Amended**: 2026-10-07
+**Version**: 1.1.0 | **Ratified**: 2026-10-07 | **Last Amended**: 2026-10-08

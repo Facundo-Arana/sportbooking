@@ -8,7 +8,8 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 - Compilar un módulo + sus dependencias: `.\mvnw.cmd -pl court-module -am compile`
 - Correr la app (único módulo ejecutable): `.\mvnw.cmd -pl app -am spring-boot:run`
 - Empaquetar: `.\mvnw.cmd -DskipTests package`
-- **No hay tests** (ni `src/test`, ni config de lint/formatter). No afirmar que `mvn test` verifica algo. La verificación real es compilar + probar endpoints con Postman.
+- **Correr las pruebas (puerta de calidad oficial, todo el reactor): `.\mvnw.cmd test`**. Por módulo: `.\mvnw.cmd -pl user-module test`, `-pl auth-module test`, `-pl app test`.
+- **Sí hay tests** (feature `001-auth-tests`): unitarias con JUnit 5 + Mockito en `user-module` (`UserServiceTest`) y `auth-module` (`AuthControllerTest`), y una integración HTTP con MockMvc + H2 en `app` (`AuthFlowIntegrationTest`, perfil `test`, sin PostgreSQL). No afirmar cobertura que la suite no ejecute. No hay config de lint/formatter.
 
 ## Arquitectura
 
@@ -51,7 +52,7 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 ## Flujo de trabajo
 
 - `bitacora-tecnica-sportbooking.md` es la fuente de verdad de qué cambió y por qué. Todo cambio de código debe agregar/actualizar una entrada numerada: síntoma → causa raíz → fix → **archivos modificados** (ruta completa) → **concepto para profundizar**. Los archivos listados deben coincidir 1 a 1 con lo realmente tocado.
-- Los cambios se aplican **directo sobre los archivos del repo** (no se entregan listados de archivos ni zips); el usuario testea después con `mvn compile` + Postman.
+- Los cambios se aplican **directo sobre los archivos del repo** (no se entregan listados de archivos ni zips); el usuario testea después con `.\mvnw.cmd test` + `mvn compile` + Postman.
 - Priorizar claridad y explicación sobre atajos; el objetivo es defender el proyecto en entrevistas.
 
 ## Gotchas
