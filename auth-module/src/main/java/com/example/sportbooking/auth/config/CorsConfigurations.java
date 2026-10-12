@@ -2,6 +2,7 @@ package com.example.sportbooking.auth.config;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -10,6 +11,17 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 public class CorsConfigurations {
+
+	// Origen y metodos externalizados a propiedades (ver application.properties,
+	// seccion "CORS"): antes estaban hardcodeados a Angular (:4200) y sin
+	// PATCH, que bloqueaba el preflight de /reservations/{id}/cancel|status|payment
+	// (son PATCH). Con @Value + List<String>, Spring separa por comas. El :default
+	// de SpEL mantiene el valor util si la propiedad no esta definida.
+	@Value("${app.cors.allowed-origins:http://localhost:5173}")
+	private List<String> allowedOrigins;
+
+	@Value("${app.cors.allowed-methods:GET,POST,PUT,PATCH,DELETE,OPTIONS}")
+	private List<String> allowedMethods;
 
 	// Se expone como CorsConfigurationSource (no como CorsFilter suelto, que
 	// era el enfoque anterior) para que Spring Security lo enchufe directo en
@@ -29,8 +41,8 @@ public class CorsConfigurations {
 	@Bean
 	CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration config = new CorsConfiguration();
-		config.setAllowedOrigins(List.of("http://localhost:4200")); // Angular (ng serve), no React
-		config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+		config.setAllowedOrigins(allowedOrigins);
+		config.setAllowedMethods(allowedMethods);
 		config.setAllowedHeaders(List.of("*"));
 		config.setAllowCredentials(true); // Necesario si usás autenticación con cookies o tokens
 

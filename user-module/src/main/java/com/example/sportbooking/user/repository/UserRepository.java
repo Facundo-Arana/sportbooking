@@ -1,6 +1,7 @@
 package com.example.sportbooking.user.repository;
 
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,11 @@ public interface UserRepository extends JpaRepository<User, Long>{
 	
 	Optional<User> findByUsername(String username);
 	Optional<User> findByEmail(String email);
+
+	// Filtro de GET /users?q= (panel admin): coincide total o parcialmente con
+	// username O email, sin importar mayusculas. Mismo criterio de "query
+	// derivado" que findByVenue_Id/findByCourt_Id.
+	List<User> findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(String username, String email);
 
 	// Trae al User junto con sus globalRoles (y el Role de cada uno) en UNA
 	// sola consulta con JOIN FETCH. Necesario para usar en autenticación:

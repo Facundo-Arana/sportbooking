@@ -19,7 +19,11 @@ public class ReservationDTO {
 
 	private Long time_block_id;
 
-	private Long reserved_by_user_id;
+	// reserved_by_user_id ya NO va aca (breaking, bitacora punto 30): el
+	// propietario de la reserva se deriva del usuario autenticado (el token),
+	// no del body. Aceptarlo del cliente permitia crear reservas "a nombre de
+	// otro". Para reservar para un tercero estan reserved_for_user_id (registrado)
+	// y reserved_for_name (nombre libre), que son otra cosa.
 
 	// Ambos opcionales y mutuamente excluyentes (ver
 	// ReservationService.validateReservedFor).

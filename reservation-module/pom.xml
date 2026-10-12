@@ -33,6 +33,16 @@
       <artifactId>user-module</artifactId>
       <version>0.0.1-SNAPSHOT</version>
     </dependency>
+    <!-- Regla de calendario (bitacora punto 32): una reserva solo es valida en
+         una franja reservable, y "reservable" se define con court_schedule.
+         Dependencia unidireccional y sin ciclo:
+         reservation -> court-schedule -> court + time-block. Se reutiliza
+         CourtScheduleService de court-schedule-module. -->
+    <dependency>
+      <groupId>com.example.sportbooking</groupId>
+      <artifactId>court-schedule-module</artifactId>
+      <version>0.0.1-SNAPSHOT</version>
+    </dependency>
   </dependencies>
 
   <build>

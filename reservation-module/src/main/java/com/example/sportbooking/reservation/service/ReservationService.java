@@ -2,12 +2,18 @@ package com.example.sportbooking.reservation.service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.example.sportbooking.court.entity.Court;
 import com.example.sportbooking.court.exception.CourtNotFoundException;
 import com.example.sportbooking.court.repository.CourtRepository;
+import com.example.sportbooking.courtschedule.entity.CourtSchedule;
+import com.example.sportbooking.courtschedule.service.CourtScheduleService;
 import com.example.sportbooking.reservation.dto.ReservationDTO;
 import com.example.sportbooking.reservation.entity.Reservation;
 import com.example.sportbooking.reservation.exception.ReservationNotFoundException;
@@ -36,13 +42,16 @@ public class ReservationService {
 	private final CourtRepository courtRepository;
 	private final TimeBlockRepository timeBlockRepository;
 	private final UserRepository userRepository;
+	private final CourtScheduleService courtScheduleService;
 
 	public ReservationService(ReservationRepository reservationRepository, CourtRepository courtRepository,
-			TimeBlockRepository timeBlockRepository, UserRepository userRepository) {
+			TimeBlockRepository timeBlockRepository, UserRepository userRepository,
+			CourtScheduleService courtScheduleService) {
 		this.reservationRepository = reservationRepository;
 		this.courtRepository = courtRepository;
 		this.timeBlockRepository = timeBlockRepository;
 		this.userRepository = userRepository;
+		this.courtScheduleService = courtScheduleService;
 	}
 
 	public Reservation create(ReservationDTO dto) {
@@ -54,9 +63,6 @@ public class ReservationService {
 		}
 		if (dto.getTime_block_id() == null) {
 			throw new IllegalArgumentException("El time_block_id es obligatorio");
-		}
-		if (dto.getReserved_by_user_id() == null) {
-			throw new IllegalArgumentException("El reserved_by_user_id es obligatorio");
 		}
 		validateReservedFor(dto.getReserved_for_user_id(), dto.getReserved_for_name());
 
@@ -73,8 +79,16 @@ public class ReservationService {
 		// mismas dos relaciones, así que heredan la misma regla de negocio.
 		validateSameVenue(court, timeBlock);
 
-		User reservedByUser = userRepository.findById(dto.getReserved_by_user_id())
-				.orElseThrow(() -> new UserNotFoundException(dto.getReserved_by_user_id()));
+		// Regla de calendario (bitacora punto 32): la franja tiene que estar
+		// habilitada en el court_schedule de la cancha para ese dia de la semana.
+		validateReservable(court.getId(), timeBlock.getId(), dto.getDate());
+
+		// Propiedad derivada del token (bitacora punto 30): reservedByUser es
+		// SIEMPRE el usuario autenticado, no lo que venga en el body. Se
+		// resuelve por email (Authentication.getName()) porque CustomUserDetails
+		// usa el email como username. reservation-module no depende de
+		// auth-module: solo usa Spring Security core + UserRepository.
+		User reservedByUser = currentAuthenticatedUser();
 
 		User reservedForUser = null;
 		if (dto.getReserved_for_user_id() != null) {
@@ -108,6 +122,33 @@ public class ReservationService {
 	public Reservation findById(Long id) {
 		return reservationRepository.findById(id)
 				.orElseThrow(() -> new ReservationNotFoundException(id));
+	}
+
+	// Disponibilidad de una cancha en una fecha: "franjas reservables del dia
+	// (court_schedule habilitado) menos las ocupadas por reservas activas".
+	// Una reserva CANCELLED no ocupa (status != CANCELLED). Si la cancha no
+	// existe -> 404 (CourtNotFoundException, la traduce el GlobalExceptionHandler).
+	public CourtAvailability findAvailability(Long courtId, LocalDate date) {
+		if (date == null) {
+			throw new IllegalArgumentException("El date es obligatorio");
+		}
+		Court court = courtRepository.findById(courtId)
+				.orElseThrow(() -> new CourtNotFoundException(courtId));
+
+		Short dayOfWeek = dayOfWeekOf(date);
+		List<CourtSchedule> reservableSlots = courtScheduleService.findReservableSlots(court.getId(), dayOfWeek);
+
+		Set<Long> occupiedTimeBlockIds = reservationRepository
+				.findByCourt_IdAndDateAndStatusNot(courtId, date, CANCELLED).stream()
+				.map(r -> r.getTimeBlock().getId())
+				.collect(Collectors.toSet());
+
+		List<CourtAvailability.Slot> slots = reservableSlots.stream()
+				.map(slot -> new CourtAvailability.Slot(slot.getTimeBlock(),
+						occupiedTimeBlockIds.contains(slot.getTimeBlock().getId())))
+				.toList();
+
+		return new CourtAvailability(courtId, date, dayOfWeek, slots);
 	}
 
 	public Reservation update(Long id, ReservationDTO dto) {
@@ -155,6 +196,10 @@ public class ReservationService {
 		// apuntando a otro venue, y viceversa.
 		validateVenueUnchanged(originalVenueId, reservation.getCourt());
 		validateSameVenue(reservation.getCourt(), reservation.getTimeBlock());
+
+		// Reprogramacion a una franja fuera del calendario -> 400 (misma regla
+		// del alta, re-validada contra el estado FINAL).
+		validateReservable(reservation.getCourt().getId(), reservation.getTimeBlock().getId(), reservation.getDate());
 
 		// Re-validamos contra el estado FINAL de la entity, mismo criterio
 		// que validateTimeRange/validateSameVenue en los módulos anteriores:
@@ -222,6 +267,21 @@ public class ReservationService {
 		reservationRepository.deleteById(id);
 	}
 
+	// Resuelve el usuario autenticado a partir del SecurityContext. El
+	// principal es un CustomUserDetails (cargado por el JwtFilter) cuyo
+	// getUsername() devuelve el EMAIL, asi que se busca por findByEmail.
+	// Si no hay autenticacion es un error de estado (el endpoint exige
+	// authenticated() antes de llegar aca): IllegalStateException -> 409,
+	// no 400, porque el request en si es valido.
+	private User currentAuthenticatedUser() {
+		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+		if (auth == null || auth.getName() == null) {
+			throw new IllegalStateException("No hay un usuario autenticado para asignar la reserva");
+		}
+		return userRepository.findByEmail(auth.getName())
+				.orElseThrow(() -> new IllegalStateException("El usuario autenticado no existe"));
+	}
+
 	// Exclusión mutua entre dos campos OPCIONALES: es una categoría de
 	// validación nueva (no existía en los módulos anteriores). No es "campo
 	// obligatorio faltante" (2.x) ni "consistencia entre dos campos que
@@ -286,6 +346,24 @@ public class ReservationService {
 			throw new IllegalStateException(
 					"Ya existe otra reserva activa para esa cancha, franja horaria y fecha");
 		}
+	}
+
+	// La franja elegida tiene que ser reservable segun el calendario de la
+	// cancha (court_schedule habilitado para ese dia de la semana). Lo define
+	// CourtScheduleService.isReservable (court-schedule-module); aca solo se
+	// traduce el incumplimiento a 400 (IllegalArgumentException).
+	private void validateReservable(Long courtId, Long timeBlockId, LocalDate date) {
+		if (!courtScheduleService.isReservable(courtId, timeBlockId, dayOfWeekOf(date))) {
+			throw new IllegalArgumentException(
+					"La franja horaria no esta habilitada en el calendario de la cancha para ese dia");
+		}
+	}
+
+	// Conversion fecha -> day_of_week de la columna (0=domingo..6=sabado).
+	// LocalDate.getDayOfWeek().getValue() da 1=lunes..7=domingo, asi que el
+	// modulo 7 mapea domingo(7) -> 0 y deja lunes..sabado sin cambios.
+	private Short dayOfWeekOf(LocalDate date) {
+		return (short) (date.getDayOfWeek().getValue() % 7);
 	}
 
 	// Duplicado literal de CourtScheduleService.validateSameVenue() (ver

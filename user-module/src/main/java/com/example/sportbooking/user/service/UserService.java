@@ -1,5 +1,7 @@
 package com.example.sportbooking.user.service;
 
+import java.util.List;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -45,6 +47,15 @@ public class UserService {
 		userRepository.save(u);
 
 		return u;
+	}
+
+	// Listado para el panel admin (GET /users?q=). El filtro es opcional y
+	// combinable: sin "q" devuelve todos; con "q" filtra por username o email.
+	public List<User> findAll(String q) {
+		if (q == null || q.isBlank()) {
+			return userRepository.findAll();
+		}
+		return userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(q, q);
 	}
 
 }

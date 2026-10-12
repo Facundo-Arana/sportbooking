@@ -17,6 +17,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
 
 	List<Reservation> findByCourt_IdAndDate(Long courtId, LocalDate date);
 
+	// Reservas de una cancha en una fecha, excluyendo un estado (las no
+	// CANCELLED): son las que OCUPAN la franja para el calculo de
+	// disponibilidad (GET /courts/{id}/availability).
+	List<Reservation> findByCourt_IdAndDateAndStatusNot(Long courtId, LocalDate date, String status);
+
 	// Chequeo de superposición (double booking) en el ALTA: ¿ya existe otra
 	// reserva NO cancelada para esta cancha, esta franja horaria y esta
 	// fecha? "status" se compara contra un valor fijo ("CANCELLED") en vez

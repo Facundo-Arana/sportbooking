@@ -54,6 +54,14 @@
             <artifactId>reservation-module</artifactId>
              <version>0.0.1-SNAPSHOT</version>
         </dependency>
+
+        <!-- OpenAPI / Swagger UI: banco de pruebas visual del contrato.
+             Version 2.x = linea para Spring Boot 3 (springdoc 1.x era para Boot 2). -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.7.0</version>
+        </dependency>
     </dependencies>
   
 	<build>

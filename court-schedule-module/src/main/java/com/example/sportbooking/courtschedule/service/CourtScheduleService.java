@@ -114,6 +114,22 @@ public class CourtScheduleService {
 		courtScheduleRepository.deleteById(id);
 	}
 
+	// API de lectura que consume reservation-module (por eso el modulo paso a
+	// depender de este). isReservable(): regla de calendario para el alta/
+	// reprogramacion. findReservableSlots(): insumo del endpoint de
+	// disponibilidad. La conversion de fecha -> day_of_week (0=domingo..6=sabado)
+	// vive en el llamador, no aca: este service razona en terminos de la columna.
+	public boolean isReservable(Long courtId, Long timeBlockId, Short dayOfWeek) {
+		if (courtId == null || timeBlockId == null || dayOfWeek == null) {
+			return false;
+		}
+		return courtScheduleRepository.existsEnabledSlot(courtId, timeBlockId, dayOfWeek);
+	}
+
+	public List<CourtSchedule> findReservableSlots(Long courtId, Short dayOfWeek) {
+		return courtScheduleRepository.findEnabledSlots(courtId, dayOfWeek);
+	}
+
 	// Validación cruzada nueva (no existía en los módulos anteriores): la
 	// cancha y la franja horaria tienen que pertenecer al MISMO venue. No
 	// tendría sentido asignarle a una cancha de la sede A un horario

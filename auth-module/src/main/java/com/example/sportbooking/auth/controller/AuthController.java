@@ -1,5 +1,6 @@
 package com.example.sportbooking.auth.controller;
 
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -7,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,10 +19,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.sportbooking.auth.dto.AuthRequest;
 import com.example.sportbooking.auth.dto.AuthResponse;
+import com.example.sportbooking.auth.dto.UserIdentityResponse;
+import com.example.sportbooking.auth.security.util.CustomUserDetails;
 import com.example.sportbooking.auth.security.util.CustomUserDetailsService;
 import com.example.sportbooking.auth.security.util.JwtUtil;
 import com.example.sportbooking.user.dto.UserDTO;
 import com.example.sportbooking.user.entity.User;
+import com.example.sportbooking.user.mapper.UserMapper;
 import com.example.sportbooking.user.service.UserService;
 
 
@@ -33,16 +38,18 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final CustomUserDetailsService userDetailsService;
     private final UserService userService;
-   
+    private final UserMapper userMapper;
 
     public AuthController(AuthenticationManager authenticationManager,
                           JwtUtil jwtUtil,
                           CustomUserDetailsService userDetailsService,
-                          UserService userService) {
+                          UserService userService,
+                          UserMapper userMapper) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userDetailsService = userDetailsService;
         this.userService = userService;
+        this.userMapper = userMapper;
     }
 	
 
@@ -85,28 +92,36 @@ public class AuthController {
 		// Ignorar que la funcion se llama findByUsername!!!
 		// Se usa el EMAIL como identificador!!!!!
         UserDetails userDetails = userDetailsService.loadUserByUsername(authRequest.getEmail());
-        
-       
-        
+
+        // CustomUserDetails trae el User completo con sus globalRoles (cargado
+        // con JOIN FETCH en CustomUserDetailsService). De ahi salen el perfil
+        // (UserResponseDTO, sin password_hash) y los authorities.
+        CustomUserDetails customUser = (CustomUserDetails) userDetails;
+
         String token = jwtUtil.generateToken(userDetails.getUsername());
 
-        return ResponseEntity.ok(new AuthResponse(token));
+        return ResponseEntity.ok(new AuthResponse(token, userMapper.toResponseDTO(customUser.getUser()),
+				authoritiesOf(customUser)));
 	}
 
 	// Endpoint protegido: requiere "Authorization: Bearer <token>" válido.
-	// Sirve para probar el flujo de auth completo de punta a punta: si esto
-	// responde 200 con tus datos, el JwtFilter validó el token correctamente
-	// y cargó el usuario en el SecurityContext.
+	// Devuelve la identidad completa (perfil + roles) para que el front sepa
+	// quien es. Si esto responde 200, el JwtFilter validó el token y cargó el
+	// CustomUserDetails en el SecurityContext.
 	@GetMapping("/me")
-	public ResponseEntity<?> me() {
-		UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext()
+	public ResponseEntity<UserIdentityResponse> me() {
+		CustomUserDetails userDetails = (CustomUserDetails) SecurityContextHolder.getContext()
 				.getAuthentication()
 				.getPrincipal();
 
-		return ResponseEntity.ok(Map.of(
-				"email", userDetails.getUsername(),
-				"authorities", userDetails.getAuthorities()
-		));
+		return ResponseEntity.ok(new UserIdentityResponse(userMapper.toResponseDTO(userDetails.getUser()),
+				authoritiesOf(userDetails)));
+	}
+
+	// Los GrantedAuthority de Spring Security a texto plano ("ROLE_ADMIN"), el
+	// mismo formato que viaja en el token y consume el front.
+	private List<String> authoritiesOf(UserDetails userDetails) {
+		return userDetails.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
 	}
 
 

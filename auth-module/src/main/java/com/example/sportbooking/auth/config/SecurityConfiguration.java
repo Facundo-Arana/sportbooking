@@ -58,7 +58,12 @@ public class SecurityConfiguration {
 				// incluidos los protegidos - si no, un preflight a /reservations
 				// se rechaza con 401 antes de llegar al controller real.
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-				.requestMatchers("/auth/**").permitAll()  
+				.requestMatchers("/auth/**").permitAll()
+				// Swagger UI / OpenAPI: publicos para poder explorar el contrato
+				// sin token (es un banco de pruebas de dev/portfolio). Los
+				// endpoints del API siguen protegidos: esto solo abre la UI y el
+				// JSON de la spec.
+				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 				.anyRequest().authenticated()
 			)
 			.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);  
