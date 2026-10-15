@@ -10,7 +10,18 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 - Correr con datos de ejemplo (perfil `dev`, seed idempotente): `.\mvnw.cmd -pl app -am spring-boot:run -Dspring-boot.run.profiles=dev` (o `SPRING_PROFILES_ACTIVE=dev`). Crea rol+usuario `ADMIN` (`admin@sportbooking.dev` / `admin123`), sede, canchas, franjas, calendario y reservas.
 - Swagger UI: `http://localhost:8081/swagger-ui/index.html` (con "Authorize" se pega el JWT).
 - Empaquetar: `.\mvnw.cmd -DskipTests package`
-- **No hay tests** (ni `src/test`, ni config de lint/formatter). No afirmar que `mvn test` verifica algo. La verificación real es compilar + probar endpoints con Postman.
+- Correr todos los tests: `.\mvnw.cmd test`. Un módulo: `.\mvnw.cmd -pl reservation-module test`. Verificación end-to-end: `.\mvnw.cmd verify`.
+- **No hay config de lint/formatter.** La verificación sigue siendo compilar + tests + probar endpoints con Postman.
+
+## Testing
+
+- **Prerrequisito de entorno (solo para los tests de integración)**: Docker Desktop con backend WSL2, instalado y corriendo. En Windows: `wsl --install` (admin + reinicio) y luego Docker Desktop. Diagnóstico: `docker info` debe devolver `ServerVersion` sin error (si dice `no se reconoce el comando` o falla el daemon, los tests de integración no corren). Los tests **unit** y de **slice** no necesitan Docker.
+- **Separación por capas** (D6 del design):
+  - **Unit** (JUnit 5 + Mockito, sin contexto Spring): junto al service, dentro de cada módulo (`<modulo>/src/test/java/...`). No dependen de base ni de Docker.
+  - **Slice** (`@WebMvcTest` + `spring-security-test`): junto al controller, en cada módulo. Mockean el service con `@MockBean` y prueban el contrato HTTP + seguridad (401/403/200) sin base.
+  - **Integración** (`@SpringBootTest` + Testcontainers): solo en `app/src/test` (único módulo con `@SpringBootApplication`). Levantan un Postgres efímero y ejecutan los escenarios de las specs. Clase base: `app/src/test/java/com/example/sportbooking/AbstractIntegrationTest.java` (patrón singleton de `PostgreSQLContainer` + `@ServiceConnection`).
+- **Perfil `test`** (`app/src/test/resources/application-test.properties`): `create-drop` de Hibernate sobre el schema `platform`, con `jwt.secret` de test. El DataSource lo provee el container (`@ServiceConnection`); el Postgres nativo de dev no se toca. `DevDataSeeder` es `@Profile("dev")`, así que **no** corre en test: cada test siembra su propio fixture.
+- **DDL de referencia**: `db/schema-reference.sql` guarda el esquema como insumo para una futura adopción de Flyway (deuda #3). Está **fuera del classpath**: no lo referencia `spring.sql.init` ni `@Sql`, no participa del build ni de los tests.
 
 ## Arquitectura
 
@@ -38,7 +49,7 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 
 ## Seguridad
 
-- JWT stateless; `SecurityConfiguration` en `auth-module`. `/auth/**`, preflight `OPTIONS /**` y las rutas de Swagger (`/swagger-ui/**`, `/v3/api-docs/**`) son públicos; todo lo demás autenticado.
+- JWT stateless; `SecurityConfiguration` en `auth-module`. `/auth/login`, `/auth/register`, preflight `OPTIONS /**` y las rutas de Swagger (`/swagger-ui/**`, `/v3/api-docs/**`) son públicos; `/auth/me` y todo lo demás, autenticado. (Antes `/auth/**` entero era `permitAll`, lo que dejaba `/auth/me` sin proteger → 500 sin token; ver bitácora 38.)
 - Autorización de recursos vía `@PreAuthorize` con SpEL que llama al bean `@venueAuthorization` **por nombre** (no por import). No crear dependencia directa de `app`.
 - `@EnableMethodSecurity` en `SecurityConfiguration` es obligatorio; sin él, `@PreAuthorize` se ignora en silencio.
 - `hasRole('ADMIN')` es bypass global y se compone aparte del chequeo de venue en cada `@PreAuthorize`.
@@ -48,7 +59,7 @@ Proyecto personal de portfolio (no comercial) para gestionar reservas de canchas
 ## Base de datos
 
 - PostgreSQL local, schema `platform`. Config en `app/src/main/resources/application.properties`: puerto 8081, `ddl-auto=update`. Los secretos se resuelven por variable de entorno (prioridad) o por `application-local.properties` (no versionado, en el root; importado con `spring.config.import`). La config versionada solo tiene placeholders (`${DB_PASSWORD:}`, `${JWT_SECRET:}`, etc.). El `spring-boot-maven-plugin` corre con `workingDirectory` = root del repo.
-- `ddl-auto=update` aplica `ALTER TABLE` al arrancar y **falla en silencio** si hay datos que violan un constraint nuevo. No hay Flyway/Liquibase ni scripts SQL versionados (la carpeta `db/` no existe en el repo).
+- `ddl-auto=update` aplica `ALTER TABLE` al arrancar y **falla en silencio** si hay datos que violan un constraint nuevo. No hay Flyway/Liquibase ni migraciones versionadas. `db/schema-reference.sql` es solo un **insumo de referencia** para adoptar Flyway (deuda #3): no lo consume el build ni los tests.
 - Los constraints de FK los crea/administra Hibernate con `ddl-auto=update` (nombres generados tipo `fk<hash>`), incluso sobre tablas existentes. **No** agregar FK a mano con otro nombre: ddl-auto no reconoce el nombre y crea un duplicado sobre la misma columna (bitácora punto 26).
 - Seed de desarrollo: `DevDataSeeder` (`@Profile("dev")`, idempotente) crea rol+usuario `ADMIN` (password hasheada con el `PasswordEncoder`), sede, canchas, franjas, calendario y reservas. Se activa corriendo con el perfil `dev` (ver Comandos). No requiere insertar el `ADMIN` a mano.
 

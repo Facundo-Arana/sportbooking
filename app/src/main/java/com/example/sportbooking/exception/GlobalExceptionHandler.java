@@ -5,6 +5,7 @@ import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -72,6 +73,17 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
 		return ResponseEntity.status(HttpStatus.CONFLICT)
 				.body(Map.of("error", "El dato ya existe o viola una restricción de la base"));
+	}
+
+	// 403: autorizacion denegada por @PreAuthorize (metodo). Sin este handler,
+	// la AccessDeniedException que lanza Spring Security al evaluar el
+	// @PreAuthorize DENTRO del metodo del controller cae en el
+	// handleUnexpected(Exception) de abajo y devuelve 500, cuando la spec
+	// (user-directory, etc.) espera 403. El 401 de "sin token" si lo resuelve
+	// el AuthenticationEntryPoint a nivel de filtro, antes de llegar al MVC.
+	@ExceptionHandler(AccessDeniedException.class)
+	public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "No tenés permisos para esta operación"));
 	}
 
 	// 401: red de seguridad genérica. AuthController.login() ya captura

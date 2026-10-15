@@ -33,6 +33,11 @@
 	</scm>
 	<properties>
 		<java.version>17</java.version>
+		<!-- Docker Engine 29 exige API >= 1.40; el docker-java que traia
+		     Testcontainers 1.20.6 (la version gestionada por Spring Boot 3.4.7)
+		     pedia una mas vieja y recibia 400 en /info. Se overrides la version
+		     gestionada por el BOM con la ultima 1.x. -->
+		<testcontainers.version>1.21.4</testcontainers.version>
 	</properties>
 	
 	
@@ -105,7 +110,26 @@
 		    <groupId>org.springframework.boot</groupId>
 		    <artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
-	
+
+        <!-- Testing (JUnit 5 + Mockito + AssertJ + MockMvc/spring-test), scope
+             test: al declararlo en el <dependencies> del parent, TODOS los
+             modulos lo heredan sin repetirlo en cada pom. No entra al jar de
+             produccion (scope test). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- spring-security-test: aporta @WithSecurityContext / SecurityContextFactory,
+             que es la base de la factory de tests de slice (WithCustomUserDetails).
+             spring-boot-starter-test NO lo incluye. Scope test. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
 	 <!-- <dependency>
 		    <groupId>com.example</groupId>
 		    <artifactId>user-module</artifactId>
