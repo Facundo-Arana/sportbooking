@@ -42,7 +42,7 @@
 
 - [x] 6.1 Correr `.\mvnw.cmd verify` de punta a punta y confirmar que todo pasa sin levantar Docker a mano. Verificación: `BUILD SUCCESS` con los tests ejecutados.
 - [x] 6.2 Agregar la entrada numerada en `bitacora-tecnica-sportbooking.md` (síntoma → causa raíz → fix → archivos modificados → concepto) y confirmar que los archivos listados coinciden 1 a 1 con los tocados. Verificación: entrada presente y coherente con el diff.
-- [ ] 6.3 **(MANUAL)** Recorrer en Swagger/Postman un flujo equivalente a la suite (login → disponibilidad → reservar → cancelar) y comparar con lo que afirman los tests. Verificación: el comportamiento manual coincide con los tests.
+- [x] 6.3 **(MANUAL)** Recorrer en Swagger/Postman un flujo equivalente a la suite (login → disponibilidad → reservar → cancelar) y comparar con lo que afirman los tests. Verificación: el comportamiento manual coincide con los tests.
 
 ## Workflow follow-up
 
