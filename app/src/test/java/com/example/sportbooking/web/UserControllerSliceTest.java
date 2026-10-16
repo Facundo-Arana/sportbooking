@@ -59,7 +59,7 @@ class UserControllerSliceTest {
     void listAsAdminReturns200WithPublicShape() throws Exception {
         when(userService.findAll(any())).thenReturn(List.of(User.builder().id(1L).username("juan").build()));
         when(userMapper.toResponseDTO(any()))
-                .thenReturn(new UserResponseDTO(1L, "juan", "juan@test.com", "Juan", null, null));
+                .thenReturn(new UserResponseDTO(1L, "juan", "juan@test.com", "Juan", null));
 
         mockMvc.perform(get("/users"))
                 .andExpect(status().isOk())

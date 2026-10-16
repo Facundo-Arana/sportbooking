@@ -32,6 +32,4 @@ public class UserResponseDTO {
 
 	private Timestamp created_at;
 
-	private Timestamp updated_at;
-
 }

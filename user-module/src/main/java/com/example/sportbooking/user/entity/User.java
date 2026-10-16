@@ -23,8 +23,11 @@ import lombok.Setter;
 import lombok.ToString;
 
 
+// @Table(name = "app_user"): antes era "user", palabra reservada de SQL que
+// obligaba a comillas dobles en todo SQL crudo. Las consultas JPQL y los
+// derived queries no cambian (usan el nombre de la entity, no de la tabla).
 @Entity
-@Table(name = "user", schema = "platform")
+@Table(name = "app_user", schema = "platform")
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
@@ -62,9 +65,10 @@ public class User {
 	
 	private String name;
 	
+	// nullable=false: el constructor de alta siempre setea created_at (no se
+	// confia en un DEFAULT de columna). documenta el NOT NULL del baseline.
+	@Column(nullable = false)
 	private Timestamp created_at;
-	
-	private Timestamp updated_at;
 	
 	// @JsonManagedReference / @JsonBackReference (ver UserGlobalRole.user):
 	// parche de infraestructura de serialización, ver bitácora punto 14. Corta

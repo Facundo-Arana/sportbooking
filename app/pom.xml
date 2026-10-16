@@ -55,6 +55,22 @@
              <version>0.0.1-SNAPSHOT</version>
         </dependency>
 
+        <!-- Flyway: dueño unico del esquema (deuda #3). flyway-core trae el
+             motor; flyway-database-postgresql aporta el soporte especifico de
+             Postgres (Flyway 10+ lo separo en un modulo aparte). Scope runtime:
+             no se referencia desde el codigo, solo se autoconfigura al arrancar.
+             Versiones gestionadas por el BOM de Spring Boot 3.4. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- OpenAPI / Swagger UI: banco de pruebas visual del contrato.
              Version 2.x = linea para Spring Boot 3 (springdoc 1.x era para Boot 2). -->
         <dependency>

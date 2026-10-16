@@ -7,6 +7,7 @@ import com.example.sportbooking.court.entity.Court;
 import com.example.sportbooking.timeblock.entity.TimeBlock;
 import com.example.sportbooking.user.entity.User;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -35,17 +36,18 @@ public class Reservation {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	@Column(nullable = false)
 	private LocalDate date;
 
 	// Primer módulo con TRES @ManyToOne hacia módulos externos distintos
 	// (court-module, time-block-module y user-module x2). Mismo patrón que
 	// CourtSchedule.court/timeBlock.
 	@ManyToOne
-	@JoinColumn(name = "fk_court_id")
+	@JoinColumn(name = "fk_court_id", nullable = false)
 	private Court court;
 
 	@ManyToOne
-	@JoinColumn(name = "fk_time_block_id")
+	@JoinColumn(name = "fk_time_block_id", nullable = false)
 	private TimeBlock timeBlock;
 
 	// Quién generó la reserva (siempre un usuario autenticado). El constraint
@@ -56,7 +58,7 @@ public class Reservation {
 	// física para el JOIN, pero el constraint es lo que da integridad
 	// referencial real.
 	@ManyToOne
-	@JoinColumn(name = "fk_reserved_by_user_id")
+	@JoinColumn(name = "fk_reserved_by_user_id", nullable = false)
 	private User reservedByUser;
 
 	// Para quién es la reserva. Es OPCIONAL y mutuamente excluyente con
@@ -73,10 +75,13 @@ public class Reservation {
 	// Sin @Builder.Default a propósito: el valor inicial se fija en el
 	// constructor de alta, no acá, mismo criterio que Court.is_active /
 	// CourtSchedule.is_enabled (no confiar en un default implícito).
+	@Column(nullable = false)
 	private String status;
 
+	@Column(nullable = false)
 	private String payment_status;
 
+	@Column(nullable = false)
 	private Timestamp created_at;
 
 	// Constructor de alta: status y payment_status arrancan en "PENDING" a

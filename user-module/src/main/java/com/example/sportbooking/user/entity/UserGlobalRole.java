@@ -36,12 +36,12 @@ public class UserGlobalRole {
 	// lo que corta el ciclo. Si en el futuro se construye user-venue-role-module,
 	// UserVenueRole.user va a necesitar la misma anotación (misma bidireccionalidad).
 	@ManyToOne
-	@JoinColumn(name = "fk_user_id")
+	@JoinColumn(name = "fk_user_id", nullable = false)
 	@JsonBackReference
 	private User user;
 
 	@ManyToOne
-	@JoinColumn(name = "fk_role_id")
+	@JoinColumn(name = "fk_role_id", nullable = false)
 	private Role role;
 
 	// Posible campo adicional:

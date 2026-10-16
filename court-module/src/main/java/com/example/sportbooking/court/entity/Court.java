@@ -4,6 +4,7 @@ import java.sql.Timestamp;
 
 import com.example.sportbooking.venue.entity.Venue;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,21 +37,27 @@ public class Court {
 	// el objeto relacionado (Venue), y @JoinColumn apunta a la columna FK real
 	// (fk_venue_id) que ya existe en la tabla. Hibernate resuelve el JOIN solo.
 	@ManyToOne
-	@JoinColumn(name = "fk_venue_id")
+	@JoinColumn(name = "fk_venue_id", nullable = false)
 	private Venue venue;
 
+	@Column(nullable = false)
 	private String name;
 
 	private String sport_type;
 
+	// boolean primitivo: no puede ser null desde la app, asi que la columna es
+	// obligatoria en el baseline.
+	@Column(nullable = false)
 	private boolean indoor;
 
 	private String surface_type;
 
 	private Integer max_players;
 
+	@Column(nullable = false)
 	private Timestamp created_at;
 
+	@Column(nullable = false)
 	private Boolean is_active;
 
 	// Constructor de alta: mismo criterio que Venue (ver bitácora, punto 5) —

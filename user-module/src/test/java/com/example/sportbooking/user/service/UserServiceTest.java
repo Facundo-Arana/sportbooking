@@ -34,7 +34,7 @@ class UserServiceTest {
     private UserService userService;
 
     private UserDTO dto() {
-        return new UserDTO("juan", "juan@test.com", "secreto", "Juan", null, null);
+        return new UserDTO("juan", "juan@test.com", "secreto", "Juan", null);
     }
 
     @Test

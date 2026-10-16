@@ -3,6 +3,7 @@ package com.example.sportbooking.courtschedule.entity;
 import com.example.sportbooking.court.entity.Court;
 import com.example.sportbooking.timeblock.entity.TimeBlock;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -35,22 +36,24 @@ public class CourtSchedule {
 	// Mismo patrón que Court.venue / TimeBlock.venue: el campo es el objeto
 	// relacionado, @JoinColumn apunta a la FK real de la tabla.
 	@ManyToOne
-	@JoinColumn(name = "fk_court_id")
+	@JoinColumn(name = "fk_court_id", nullable = false)
 	private Court court;
 
 	@ManyToOne
-	@JoinColumn(name = "fk_time_block_id")
+	@JoinColumn(name = "fk_time_block_id", nullable = false)
 	private TimeBlock timeBlock;
 
 	// day_of_week es int2 (smallint) en Postgres (ver sportbooking.sql) ->
 	// Short en Java, no Integer, para que el mapeo sea 1 a 1 con el tipo de
 	// columna real (mismo criterio que LocalTime en TimeBlock: usar el tipo
 	// que representa exactamente lo que hay en la base).
+	@Column(nullable = false)
 	private Short day_of_week;
 
 	// Boolean (wrapper), no boolean primitivo: mismo motivo que
 	// Court.is_active - en el update parcial hace falta distinguir "no vino
 	// en el body" (null) de "vino en false a propósito".
+	@Column(nullable = false)
 	private Boolean is_enabled;
 
 	private String notes;

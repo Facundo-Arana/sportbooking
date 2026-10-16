@@ -39,6 +39,7 @@ public class Venue {
 
 	private String phone;
 
+	@Column(nullable = false)
 	private Timestamp created_at;
 
 	// Constructor de alta: igual que en User, seteamos created_at acá en vez de

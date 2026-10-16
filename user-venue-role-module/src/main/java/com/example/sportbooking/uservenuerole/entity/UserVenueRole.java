@@ -45,7 +45,7 @@ public class UserVenueRole {
 	private Long id;
 
 	@ManyToOne
-	@JoinColumn(name = "fk_venue_id")
+	@JoinColumn(name = "fk_venue_id", nullable = false)
 	private Venue venue;
 
 	// fk_venue_id / fk_user_id / fk_role_id: los constraints de FK los
@@ -54,11 +54,11 @@ public class UserVenueRole {
 	// duplicado (mismo caso que Reservation, ver comentario ahí; bitácora
 	// punto 26). El @ManyToOne no necesita la FK física para el JOIN.
 	@ManyToOne
-	@JoinColumn(name = "fk_user_id")
+	@JoinColumn(name = "fk_user_id", nullable = false)
 	private User user;
 
 	@ManyToOne
-	@JoinColumn(name = "fk_role_id")
+	@JoinColumn(name = "fk_role_id", nullable = false)
 	private Role role;
 
 	public UserVenueRole(Venue venue, User user, Role role) {

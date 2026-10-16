@@ -4,6 +4,7 @@ import java.time.LocalTime;
 
 import com.example.sportbooking.venue.entity.Venue;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -35,21 +36,25 @@ public class TimeBlock {
 	// Mismo patrón que Court.venue: @ManyToOne + @JoinColumn hacia la FK real
 	// (fk_venue_id). Cada franja horaria pertenece a una sede.
 	@ManyToOne
-	@JoinColumn(name = "fk_venue_id")
+	@JoinColumn(name = "fk_venue_id", nullable = false)
 	private Venue venue;
 
 	// block_group agrupa franjas relacionadas (ej. turno "mañana"/"tarde"); es
 	// una etiqueta de negocio, no tiene lógica propia en esta capa.
+	@Column(nullable = false)
 	private String block_group;
 
+	@Column(nullable = false)
 	private String label;
 
 	// LocalTime (java.time), no java.sql.Time: Hibernate 6 lo mapea nativo a
 	// la columna "time" de Postgres, y Jackson lo serializa como "HH:mm:ss"
 	// sin configuración extra (spring-boot-starter-web ya trae el módulo
 	// jackson-datatype-jsr310 de forma transitiva).
+	@Column(nullable = false)
 	private LocalTime start_time;
 
+	@Column(nullable = false)
 	private LocalTime end_time;
 
 	// A diferencia de Venue/Court, la tabla time_block (ver sportbooking.sql)
