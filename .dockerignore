@@ -1,0 +1,32 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Artefactos de build (se reconstruyen dentro de la imagen)
+**/target
+**/build
+
+# Config local con secretos: nunca deben viajar en el contexto de build
+.env
+application-local.properties
+**/application-local.properties
+
+# IDE
+.idea
+.vscode
+*.iml
+*.iws
+*.ipr
+.settings
+.project
+.classpath
+.factorypath
+
+# OpenSpec no forma parte del runtime
+openspec
+
+# Documentacion y compose no se necesitan para compilar
+README.md
+docker-compose.yml
+.env.example

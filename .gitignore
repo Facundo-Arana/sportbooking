@@ -34,3 +34,4 @@ build/
 
 ### Config local con secretos (no versionar) ###
 application-local.properties
+.env

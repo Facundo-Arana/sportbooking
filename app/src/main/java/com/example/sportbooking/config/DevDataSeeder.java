@@ -6,6 +6,7 @@ import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
@@ -52,11 +53,15 @@ public class DevDataSeeder implements ApplicationRunner {
 	private final CourtScheduleRepository courtScheduleRepository;
 	private final ReservationRepository reservationRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final String adminEmail;
+	private final String adminPassword;
 
 	public DevDataSeeder(UserRepository userRepository, RoleRepository roleRepository, VenueRepository venueRepository,
 			CourtRepository courtRepository, TimeBlockRepository timeBlockRepository,
 			CourtScheduleRepository courtScheduleRepository, ReservationRepository reservationRepository,
-			PasswordEncoder passwordEncoder) {
+			PasswordEncoder passwordEncoder,
+			@Value("${app.dev.admin.email}") String adminEmail,
+			@Value("${app.dev.admin.password}") String adminPassword) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
 		this.venueRepository = venueRepository;
@@ -65,6 +70,8 @@ public class DevDataSeeder implements ApplicationRunner {
 		this.courtScheduleRepository = courtScheduleRepository;
 		this.reservationRepository = reservationRepository;
 		this.passwordEncoder = passwordEncoder;
+		this.adminEmail = adminEmail;
+		this.adminPassword = adminPassword;
 	}
 
 	@Override
@@ -78,7 +85,7 @@ public class DevDataSeeder implements ApplicationRunner {
 		// PasswordEncoder del login (BCrypt); por eso no puede ser SQL plano.
 		Role adminRole = roleRepository.save(Role.builder().name("ADMIN").build());
 
-		User admin = new User("admin", "admin@sportbooking.dev", passwordEncoder.encode("admin123"), "Administrador");
+		User admin = new User("admin", adminEmail, passwordEncoder.encode(adminPassword), "Administrador");
 		// User.globalRoles tiene cascade=ALL: agregar el link y guardar el User
 		// persiste tambien el UserGlobalRole (no existe un UserGlobalRoleRepository).
 		UserGlobalRole link = UserGlobalRole.builder().role(adminRole).build();
